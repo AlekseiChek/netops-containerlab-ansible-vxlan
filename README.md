@@ -9,25 +9,33 @@ It builds a realistic **service-provider fabric**: IS-IS wide-metric core, **EVP
 
 ---
 
-## ⚡ Quick start (3 commands)
+## ⚡ Quick start (4 steps)
 
-> Prereqs: **Docker**, **containerlab**, and **Ansible** installed (see [§1 Install the tools](#1-install-the-tools-one-time) if you do not have them). No kernel modules required.
+> Prereqs: **Docker**, **containerlab**, and **Ansible** installed (see [§1 Install the tools](#1-install-the-tools-one-time) if you do not have them). **No kernel modules required.**
 
 ```bash
 # 1) get the lab
 git clone https://github.com/AlekseiChek/netops-containerlab-ansible-vxlan
+cd netops-containerlab-ansible-vxlan
+
 # 2) build the whole topology (10 routers + wiring, ~1–2 min)
-cd netops-containerlab-ansible-vxlan/clab && sudo containerlab deploy -t stage1.clab.yml
-# 3) prove a zero-loss rolling reboot of the core
-cd ../ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/safe-reboot.yml
+cd clab && sudo containerlab deploy -t stage1.clab.yml && cd ..
+
+# 3) EVPN init — required once after deploy (see note below)
+bash tools/init-evpn.sh
+
+# 4) prove a zero-loss rolling reboot of the core
+cd ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/safe-reboot.yml
 ```
 
-Watch it live — open a second terminal while step 3 runs:
+Watch it live — open a second terminal while step 4 runs:
 ```bash
 docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
 ```
 The playbook drains → reboots → restores each router one at a time and **asserts 0% packet loss** at the end.
 Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
+
+> **Why step 3?** FRR's bgpd has a startup race with zebra for L3VNI registration. bgpd queries zebra for VNIs before zebra finishes processing the VRF-VNI binding, so bgpd misses VNI 100 and generates no EVPN Type-5 routes. The script toggles `advertise-all-vni` which forces bgpd to re-query zebra. This is a known FRR startup behaviour — VyOS does not expose the RD/RT knobs for EVPN in its config system, so the fix cannot be baked into `config.boot`.
 
 ---
 
