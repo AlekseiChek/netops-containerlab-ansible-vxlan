@@ -1,0 +1,9 @@
+---
+collections:
+  - name: vyos.vyos             # VyOS core (network_cli over SSH)
+  - name: community.docker      # FRR CE (docker exec, uses docker CLI)
+  - name: ansible.netcommon     # network_cli connection plugin
+  # production multi-vendor (not used against this lab):
+  # - name: junipernetworks.junos
+  # - name: cisco.iosxr
+  # - name: arista.eos

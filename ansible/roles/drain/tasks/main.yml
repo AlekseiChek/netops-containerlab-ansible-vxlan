@@ -1,0 +1,23 @@
+---
+# VyOS make-before-break (vyos_config auto-commits). Two reversible levers:
+#  - IS-IS overload-bit      -> node stops being transit (adjacency stays up)
+#  - BGP graceful-shutdown   -> advertised paths least-preferred (RFC 8326)
+# With the redundant fabric, draining a node shifts traffic to the alternate path.
+
+- name: "DRAIN {{ inventory_hostname }} — IS-IS overload-bit + BGP graceful-shutdown"
+  vyos.vyos.vyos_config:
+    lines:
+      - set protocols isis set-overload-bit
+      - set protocols bgp parameters graceful-shutdown
+  when: drain_state | default('drain') == 'drain'
+
+- name: "Wait for traffic/sessions to shift to the redundant path"
+  ansible.builtin.pause: { seconds: "{{ drain_wait }}" }
+  when: drain_state | default('drain') == 'drain'
+
+- name: "UNDRAIN {{ inventory_hostname }} — clear overload-bit + graceful-shutdown"
+  vyos.vyos.vyos_config:
+    lines:
+      - delete protocols isis set-overload-bit
+      - delete protocols bgp parameters graceful-shutdown
+  when: drain_state | default('drain') == 'undrain'

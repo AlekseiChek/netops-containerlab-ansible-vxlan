@@ -1,0 +1,81 @@
+---
+# Rolling reboot of the VyOS core with ZERO customer-traffic loss — PROVEN by a
+# continuous probe that runs IN PARALLEL across the whole maintenance window.
+#
+# Per node, one at a time (serial:1, stop on first failure):
+#   start continuous ce1->ce2 probe (background)   <-- begins BEFORE touching the node
+#   DRAIN (vyos_config: IS-IS overload-bit + BGP graceful-shutdown)
+#   reboot = restart FRR inside VyOS (RP reload; container/SSH stay up, drain persists)
+#   wait until FRR + all BGP sessions are back
+#   UNDRAIN
+#   stop probe -> GATE: the probe spanning the entire window must show 0% loss
+#
+# Why restart-FRR (not docker restart): VyOS container PID 1 is the VyOS init, not
+# watchfrr, so `systemctl restart frr` bounces routing daemons while SSH and the
+# committed running-config (incl. the drain) stay intact. Full power-cycle
+# alternative: docker restart {{ ansible_host }} (reloads config.boot, loses drain).
+# Probe interval 0.2s = 5 pkt/s, so a single lost packet shows.
+#
+# Run:  ansible-playbook playbooks/safe-reboot.yml      (or -e target=site_b)
+
+- name: Safe rolling reboot (VyOS, zero loss proven by parallel probe)
+  hosts: "{{ target | default('core') }}"
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    boot_retries: 40
+    boot_delay: 3
+    probe_src: 198.51.100.1     # ce1 loopback
+    probe_dst: 203.0.113.1      # ce2 loopback
+  tasks:
+    - name: "Start continuous ce1->ce2 probe (background) BEFORE touching {{ inventory_hostname }}"
+      ansible.builtin.shell: |
+        docker exec clab-stage1-ce1 sh -c 'pkill -x ping 2>/dev/null; : > /tmp/probe.log'
+        docker exec -d clab-stage1-ce1 sh -c 'ping -i 0.2 -I {{ probe_src }} {{ probe_dst }} >> /tmp/probe.log 2>&1'
+      delegate_to: localhost
+      changed_when: false
+
+    - name: "DRAIN {{ inventory_hostname }} (overload-bit + BGP graceful-shutdown)"
+      ansible.builtin.import_role: { name: drain }
+      vars: { drain_state: drain }
+
+    - name: "Reboot {{ inventory_hostname }} — restart FRR inside VyOS (RP reload)"
+      ansible.builtin.command: "docker exec {{ ansible_host }} systemctl restart frr"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: "Wait for FRR to answer again on {{ inventory_hostname }}"
+      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c 'show version'"
+      delegate_to: localhost
+      register: ver
+      until: ver.rc == 0
+      retries: "{{ boot_retries }}"
+      delay: "{{ boot_delay }}"
+      changed_when: false
+
+    - name: "Wait until ALL BGP sessions on {{ inventory_hostname }} are re-Established"
+      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c 'show bgp ipv4 unicast summary'"
+      delegate_to: localhost
+      register: bsum
+      until: "bsum.rc == 0 and not (bsum.stdout | regex_search('Active|Idle|Connect|OpenSent|OpenConfirm'))"
+      retries: "{{ boot_retries }}"
+      delay: "{{ boot_delay }}"
+      changed_when: false
+
+    - name: "UNDRAIN {{ inventory_hostname }} (back in service)"
+      ansible.builtin.import_role: { name: drain }
+      vars: { drain_state: undrain }
+
+    - name: "Stop the probe and read its summary"
+      ansible.builtin.shell: >
+        docker exec clab-stage1-ce1 sh -c 'pkill -INT -x ping 2>/dev/null || true; sleep 1; tail -n 4 /tmp/probe.log'
+      delegate_to: localhost
+      register: probe
+      changed_when: false
+
+    - name: "GATE — ZERO loss across the entire {{ inventory_hostname }} maintenance window"
+      ansible.builtin.assert:
+        that: "'0% packet loss' in probe.stdout"
+        fail_msg: "PACKET LOSS while rebooting {{ inventory_hostname }} → {{ probe.stdout }}"
+        success_msg: "{{ inventory_hostname }} OK → {{ probe.stdout_lines | select('search','packet loss') | first }}"

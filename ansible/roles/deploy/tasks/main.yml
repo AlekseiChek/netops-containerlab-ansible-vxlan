@@ -1,0 +1,11 @@
+---
+# The "change". Demo = push a benign blackhole static route on VyOS (observable,
+# reversible, harmless). In production this is the rendered config push.
+- name: "Deploy change — add blackhole route {{ deploy_route }}"
+  vyos.vyos.vyos_config:
+    lines:
+      - set protocols static route {{ deploy_route }} blackhole
+
+- name: Record deploy timestamp
+  ansible.builtin.set_fact:
+    deploy_ts: "{{ '%Y-%m-%dT%H:%M:%S' | strftime }}"
