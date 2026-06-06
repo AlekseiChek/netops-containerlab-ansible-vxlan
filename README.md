@@ -21,21 +21,18 @@ cd netops-containerlab-ansible-vxlan
 # 2) build the whole topology (10 routers + wiring, ~1–2 min)
 cd clab && sudo containerlab deploy -t stage1.clab.yml && cd ..
 
-# 3) EVPN init — required once after deploy (see note below)
-bash tools/init-evpn.sh
-
-# 4) prove a zero-loss rolling reboot of the core
+# 3) prove a zero-loss rolling reboot of the core
 cd ansible && ansible-galaxy collection install -r requirements.yml && ansible-playbook playbooks/safe-reboot.yml
 ```
 
-Watch it live — open a second terminal while step 4 runs:
+Watch it live — open a second terminal while step 3 runs:
 ```bash
 docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
 ```
 The playbook drains → reboots → restores each router one at a time and **asserts 0% packet loss** at the end.
 Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
 
-> **Why step 3?** FRR's bgpd has a startup race with zebra for L3VNI registration. bgpd queries zebra for VNIs before zebra finishes processing the VRF-VNI binding, so bgpd misses VNI 100 and generates no EVPN Type-5 routes. The script toggles `advertise-all-vni` which forces bgpd to re-query zebra. This is a known FRR startup behaviour — VyOS does not expose the RD/RT knobs for EVPN in its config system, so the fix cannot be baked into `config.boot`.
+> **EVPN convergence:** the L3VNI uses a bridge-backed SVI (`vxlan100` → `br100` → SVI in VRF `CUST`) so the router-MAC exists and the L3VNI comes up at boot. If on some boot EVPN hasn't converged (no Type-5 routes, `show bgp l2vpn evpn vni` empty), run `bash tools/init-evpn.sh` once — it restarts FRR on the PEs to re-sync bgpd with zebra.
 
 ---
 

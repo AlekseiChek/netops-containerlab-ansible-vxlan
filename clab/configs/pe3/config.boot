@@ -1,4 +1,11 @@
 interfaces {
+    bridge br100 {
+        member {
+            interface vxlan100 {
+            }
+        }
+        vrf CUST
+    }
     ethernet eth1 {
         address 10.0.0.10/31
         mtu 9500
@@ -23,7 +30,6 @@ interfaces {
         port 4789
         source-address 192.0.2.3
         vni 100
-        vrf CUST
     }
 }
 protocols {
