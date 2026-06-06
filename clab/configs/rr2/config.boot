@@ -16,9 +16,15 @@ protocols {
         net 49.0001.1920.0000.2102.00
         level level-2
         metric-style wide
-        interface eth1 { network point-to-point }
-        interface eth2 { network point-to-point }
-        interface lo { passive }
+        interface eth1 {
+            network point-to-point
+        }
+        interface eth2 {
+            network point-to-point
+        }
+        interface lo {
+            passive
+        }
     }
     bgp {
         system-as 65000
@@ -40,24 +46,47 @@ protocols {
                 }
             }
         }
-        neighbor 192.0.2.1  { peer-group RRC }
-        neighbor 192.0.2.2  { peer-group RRC }
-        neighbor 192.0.2.3  { peer-group RRC }
-        neighbor 192.0.2.4  { peer-group RRC }
-        neighbor 192.0.2.11 { peer-group RRC }
-        neighbor 192.0.2.12 { peer-group RRC }
+        neighbor 192.0.2.1 {
+            peer-group RRC
+        }
+        neighbor 192.0.2.2 {
+            peer-group RRC
+        }
+        neighbor 192.0.2.3 {
+            peer-group RRC
+        }
+        neighbor 192.0.2.4 {
+            peer-group RRC
+        }
+        neighbor 192.0.2.11 {
+            peer-group RRC
+        }
+        neighbor 192.0.2.12 {
+            peer-group RRC
+        }
         neighbor 192.0.2.101 {
             remote-as 65000
             update-source lo
             address-family {
-                ipv4-unicast { }
-                l2vpn-evpn { }
+                ipv4-unicast {
+                }
+                l2vpn-evpn {
+                }
             }
         }
     }
 }
 system {
     host-name rr2
-    login { user vyos { authentication { plaintext-password vyos } } }
+    login {
+        user vyos {
+            authentication {
+                plaintext-password vyos
+            }
+        }
+    }
 }
-service { ssh { } }
+service {
+    ssh {
+    }
+}

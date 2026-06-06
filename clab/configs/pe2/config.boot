@@ -31,9 +31,15 @@ protocols {
         net 49.0001.1920.0000.2002.00
         level level-2
         metric-style wide
-        interface eth1 { network point-to-point }
-        interface eth2 { network point-to-point }
-        interface lo { passive }
+        interface eth1 {
+            network point-to-point
+        }
+        interface eth2 {
+            network point-to-point
+        }
+        interface lo {
+            passive
+        }
     }
     bgp {
         system-as 65000
@@ -116,6 +122,15 @@ vrf {
 }
 system {
     host-name pe2
-    login { user vyos { authentication { plaintext-password vyos } } }
+    login {
+        user vyos {
+            authentication {
+                plaintext-password vyos
+            }
+        }
+    }
 }
-service { ssh { } }
+service {
+    ssh {
+    }
+}
