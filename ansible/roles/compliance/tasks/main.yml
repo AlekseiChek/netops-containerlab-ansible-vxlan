@@ -1,53 +1,53 @@
 ---
-# Semantic checks — VyOS EVPN-VXLAN policy hygiene.
+# Semantic checks — VyOS eBGP Clos / EVPN-VXLAN policy hygiene.
 - name: Get configuration commands
   vyos.vyos.vyos_command:
     commands: ["show configuration commands"]
   register: cfg
   changed_when: false
 
-- name: IS-IS configured
-  ansible.builtin.assert:
-    that: "'protocols isis' in cfg.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: IS-IS not configured"
-
-- name: IS-IS wide metric-style enabled
-  ansible.builtin.assert:
-    that: "'isis metric-style wide' in cfg.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: IS-IS not using wide metrics"
-
 - name: BGP configured
   ansible.builtin.assert:
     that: "'protocols bgp' in cfg.stdout[0]"
     fail_msg: "{{ inventory_hostname }}: BGP not configured"
+
+- name: No IGP (underlay must be eBGP only)
+  ansible.builtin.assert:
+    that:
+      - "'protocols isis' not in cfg.stdout[0]"
+      - "'protocols ospf' not in cfg.stdout[0]"
+    fail_msg: "{{ inventory_hostname }}: an IGP is configured — underlay must be pure eBGP"
 
 - name: Loopback present
   ansible.builtin.assert:
     that: "'loopback lo' in cfg.stdout[0]"
     fail_msg: "{{ inventory_hostname }}: no loopback configured"
 
-- name: BGP l2vpn-evpn address-family configured (PE nodes only)
+- name: BGP l2vpn-evpn address-family configured
   ansible.builtin.assert:
     that: "'l2vpn-evpn' in cfg.stdout[0]"
     fail_msg: "{{ inventory_hostname }}: l2vpn-evpn not configured"
-  when: "'pe' in inventory_hostname"
 
-- name: VXLAN interface present (PE nodes only)
-  ansible.builtin.assert:
-    that: "'vxlan' in cfg.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: no VXLAN interface configured"
-  when: "'pe' in inventory_hostname"
-
-- name: VRF CUST with L3VNI present (PE nodes only)
-  ansible.builtin.assert:
-    that: "'vrf name CUST' in cfg.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: VRF CUST not configured"
-    success_msg: "{{ inventory_hostname }}: EVPN-VXLAN compliance OK"
-  when: "'pe' in inventory_hostname"
+- name: Leaf checks — VXLAN VTEP + VRF CUST L3VNI
+  when: "inventory_hostname in groups['leaf']"
+  block:
+    - name: VXLAN interface present
+      ansible.builtin.assert:
+        that: "'vxlan vxlan100' in cfg.stdout[0]"
+        fail_msg: "{{ inventory_hostname }}: no VXLAN VTEP configured"
+    - name: VRF CUST present
+      ansible.builtin.assert:
+        that: "'vrf name CUST' in cfg.stdout[0]"
+        fail_msg: "{{ inventory_hostname }}: VRF CUST not configured"
+    - name: multipath-relax enabled (ECMP across spine ASNs)
+      ansible.builtin.assert:
+        that: "'multipath-relax' in cfg.stdout[0]"
+        fail_msg: "{{ inventory_hostname }}: bestpath as-path multipath-relax missing"
+        success_msg: "{{ inventory_hostname }}: leaf EVPN-VXLAN compliance OK"
 
 - name: Save compliance report
   ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/compliance_{{ inventory_hostname }}.txt"
     content: |
-      Compliance {{ inventory_hostname }} — IS-IS(wide) / BGP / l2vpn-evpn / VXLAN / VRF CUST: OK
+      Compliance {{ inventory_hostname }} — eBGP (no IGP) / l2vpn-evpn{{ ' / VXLAN / VRF CUST / multipath-relax' if inventory_hostname in groups['leaf'] else '' }}: OK
   delegate_to: localhost

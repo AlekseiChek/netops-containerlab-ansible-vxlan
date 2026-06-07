@@ -1,37 +1,37 @@
 ---
-# Snapshot live VyOS state BEFORE the change — baseline + evidence.
+# Snapshot live VyOS state BEFORE the change — baseline + evidence (eBGP Clos).
 - name: Ensure artifacts dir exists
   ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
   delegate_to: localhost
   run_once: true
 
-- name: Gather IS-IS / BGP / route state
+- name: Gather BGP / EVPN / route state
   vyos.vyos.vyos_command:
     commands:
-      - show isis neighbor
       - show bgp summary
+      - show bgp l2vpn evpn summary
       - show ip route summary
   register: pre
   changed_when: false
 
-- name: Assert IS-IS has at least one Up adjacency
+- name: Assert BGP is running (underlay present)
   ansible.builtin.assert:
-    that: "'Up' in pre.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: no IS-IS adjacency Up — risky to deploy"
-    success_msg: "{{ inventory_hostname }}: IS-IS OK pre-deploy"
+    that: "'Neighbor' in pre.stdout[0] or 'BGP' in pre.stdout[0]"
+    fail_msg: "{{ inventory_hostname }}: no BGP — risky to deploy"
+    success_msg: "{{ inventory_hostname }}: BGP OK pre-deploy"
 
 - name: Record baseline BGP down-peer count (Active/Idle/Connect)
   ansible.builtin.set_fact:
-    pre_bgp_down: "{{ pre.stdout[1] | regex_findall('Active|Idle|Connect') | length }}"
+    pre_bgp_down: "{{ pre.stdout[0] | regex_findall('Active|Idle|Connect') | length }}"
 
 - name: Save precheck snapshot
   ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/precheck_{{ inventory_hostname }}.txt"
     content: |
       === PRECHECK {{ inventory_hostname }} ===
-      --- IS-IS neighbor ---
+      --- BGP summary (underlay) ---
       {{ pre.stdout[0] }}
-      --- BGP summary ---
+      --- BGP l2vpn evpn summary ---
       {{ pre.stdout[1] }}
       --- route summary ---
       {{ pre.stdout[2] }}

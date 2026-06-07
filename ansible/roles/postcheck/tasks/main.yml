@@ -1,32 +1,27 @@
 ---
-# Deterministic health gate on VyOS: re-read state, compare vs precheck baseline.
+# Deterministic health gate on VyOS (eBGP Clos): re-read state vs precheck baseline.
 # A failed assert stops the play (any_errors_fatal) => the change is blocked.
 
 - name: Wait for reconvergence
   ansible.builtin.pause: { seconds: "{{ convergence_wait }}" }
 
-- name: Re-read IS-IS / BGP / deployed route
+- name: Re-read BGP / EVPN / deployed route
   vyos.vyos.vyos_command:
     commands:
-      - show isis neighbor
       - show bgp summary
+      - show bgp l2vpn evpn summary
       - show ip route {{ deploy_route }}
   register: post
   changed_when: false
 
-- name: GATE — IS-IS adjacency still Up
-  ansible.builtin.assert:
-    that: "'Up' in post.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: IS-IS adjacency lost post-deploy — ROLLBACK"
-
 - name: GATE — BGP did not degrade (down-peers not increased)
   ansible.builtin.assert:
-    that: "(post.stdout[1] | regex_findall('Active|Idle|Connect') | length) <= (pre_bgp_down | int)"
+    that: "(post.stdout[0] | regex_findall('Active|Idle|Connect') | length) <= (pre_bgp_down | int)"
     fail_msg: "{{ inventory_hostname }}: BGP peers degraded post-deploy — ROLLBACK"
 
 - name: GATE — change is actually present
   ansible.builtin.assert:
-    that: "'blackhole' in post.stdout[2] or 'blackhole' in post.stdout[2] | lower"
+    that: "'blackhole' in (post.stdout[2] | lower)"
     fail_msg: "{{ inventory_hostname }}: deployed route missing — change did not apply"
     success_msg: "{{ inventory_hostname }}: health gate PASS"
 
@@ -36,9 +31,9 @@
     content: |
       === POSTCHECK {{ inventory_hostname }} ===  deployed: {{ deploy_ts | default('N/A') }}
       baseline BGP down-peers (pre): {{ pre_bgp_down | default('?') }}
-      --- IS-IS neighbor (post) ---
-      {{ post.stdout[0] }}
       --- BGP summary (post) ---
+      {{ post.stdout[0] }}
+      --- BGP l2vpn evpn summary (post) ---
       {{ post.stdout[1] }}
       Gate: PASS
   delegate_to: localhost

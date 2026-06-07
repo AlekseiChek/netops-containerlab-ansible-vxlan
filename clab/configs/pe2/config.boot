@@ -7,11 +7,11 @@ interfaces {
         vrf CUST
     }
     ethernet eth1 {
-        address 10.0.0.6/31
+        address 10.0.1.2/31
         mtu 9500
     }
     ethernet eth2 {
-        address 10.0.0.8/31
+        address 10.0.2.2/31
         mtu 9500
     }
     ethernet eth3 {
@@ -33,26 +33,26 @@ interfaces {
     }
 }
 protocols {
-    isis {
-        net 49.0001.1920.0000.2002.00
-        level level-2
-        metric-style wide
-        interface eth1 {
-            network point-to-point
-        }
-        interface eth2 {
-            network point-to-point
-        }
-        interface lo {
-            passive
-        }
-    }
     bgp {
-        system-as 65000
+        system-as 65002
         parameters {
             router-id 192.0.2.2
+            bestpath {
+                as-path {
+                    multipath-relax
+                }
+            }
         }
         address-family {
+            ipv4-unicast {
+                redistribute {
+                    connected {
+                    }
+                }
+                maximum-paths {
+                    ebgp 2
+                }
+            }
             l2vpn-evpn {
                 advertise-all-vni
                 advertise {
@@ -63,25 +63,19 @@ protocols {
                 }
             }
         }
-        neighbor 192.0.2.101 {
-            remote-as 65000
-            update-source lo
+        neighbor 10.0.1.3 {
+            remote-as 65100
             address-family {
                 ipv4-unicast {
-                    nexthop-self {
-                    }
                 }
                 l2vpn-evpn {
                 }
             }
         }
-        neighbor 192.0.2.102 {
-            remote-as 65000
-            update-source lo
+        neighbor 10.0.2.3 {
+            remote-as 65200
             address-family {
                 ipv4-unicast {
-                    nexthop-self {
-                    }
                 }
                 l2vpn-evpn {
                 }
@@ -95,7 +89,7 @@ vrf {
         vni 100
         protocols {
             bgp {
-                system-as 65000
+                system-as 65002
                 parameters {
                     router-id 192.0.2.2
                 }
@@ -116,7 +110,7 @@ vrf {
                     }
                 }
                 neighbor 10.1.1.3 {
-                    remote-as 65001
+                    remote-as 65010
                     address-family {
                         ipv4-unicast {
                         }

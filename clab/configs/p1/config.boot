@@ -1,30 +1,18 @@
 interfaces {
     ethernet eth1 {
-        address 10.0.0.0/31
+        address 10.0.1.1/31
         mtu 9500
     }
     ethernet eth2 {
-        address 10.0.0.3/31
+        address 10.0.1.3/31
         mtu 9500
     }
     ethernet eth3 {
-        address 10.0.0.7/31
+        address 10.0.1.5/31
         mtu 9500
     }
     ethernet eth4 {
-        address 10.0.0.11/31
-        mtu 9500
-    }
-    ethernet eth5 {
-        address 10.0.0.15/31
-        mtu 9500
-    }
-    ethernet eth6 {
-        address 10.0.0.19/31
-        mtu 9500
-    }
-    ethernet eth7 {
-        address 10.0.0.23/31
+        address 10.0.1.7/31
         mtu 9500
     }
     loopback lo {
@@ -32,53 +20,55 @@ interfaces {
     }
 }
 protocols {
-    isis {
-        net 49.0001.1920.0000.2011.00
-        level level-2
-        metric-style wide
-        interface eth1 {
-            network point-to-point
-        }
-        interface eth2 {
-            network point-to-point
-        }
-        interface eth3 {
-            network point-to-point
-        }
-        interface eth4 {
-            network point-to-point
-        }
-        interface eth5 {
-            network point-to-point
-        }
-        interface eth6 {
-            network point-to-point
-        }
-        interface eth7 {
-            network point-to-point
-        }
-        interface lo {
-            passive
-        }
-    }
     bgp {
-        system-as 65000
+        system-as 65100
         parameters {
             router-id 192.0.2.11
         }
-        neighbor 192.0.2.101 {
-            remote-as 65000
-            update-source lo
-            address-family {
-                ipv4-unicast {
+        address-family {
+            ipv4-unicast {
+                redistribute {
+                    connected {
+                    }
+                }
+                maximum-paths {
+                    ebgp 4
                 }
             }
         }
-        neighbor 192.0.2.102 {
-            remote-as 65000
-            update-source lo
+        neighbor 10.0.1.0 {
+            remote-as 65001
             address-family {
                 ipv4-unicast {
+                }
+                l2vpn-evpn {
+                }
+            }
+        }
+        neighbor 10.0.1.2 {
+            remote-as 65002
+            address-family {
+                ipv4-unicast {
+                }
+                l2vpn-evpn {
+                }
+            }
+        }
+        neighbor 10.0.1.4 {
+            remote-as 65003
+            address-family {
+                ipv4-unicast {
+                }
+                l2vpn-evpn {
+                }
+            }
+        }
+        neighbor 10.0.1.6 {
+            remote-as 65004
+            address-family {
+                ipv4-unicast {
+                }
+                l2vpn-evpn {
                 }
             }
         }
