@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="1160" viewBox="0 0 1640 1160">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1A1D20"/><stop offset="1" stop-color="#121417"/></linearGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="t" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#E08A3C"/></marker>
+    <style>
+      .h{font-family:'Bahnschrift','DIN',sans-serif;font-weight:700}
+      .m{font-family:'Cascadia Code','Consolas',monospace}
+      .lbl{font-family:'Bahnschrift','DIN',sans-serif;font-weight:600}
+    </style>
+  </defs>
+  <rect width="1640" height="1160" fill="url(#bg)"/>
+  <rect x="0" y="0" width="10" height="1160" fill="#E08A3C"/>
+
+  <text x="60" y="64" class="m" font-size="15" fill="#5FB0B7" letter-spacing="3">NETOPS · SRE  /  LAB DESIGN</text>
+  <text x="58" y="118" class="h" font-size="44" fill="#E08A3C">Two-DC EVPN-VXLAN Clos + Type-5 DCI</text>
+
+  <!-- DC1 box -->
+  <rect x="40" y="150" width="720" height="860" rx="16" fill="none" stroke="#33363b" stroke-width="2"/>
+  <text x="64" y="190" class="h" font-size="24" fill="#EDEAE3">DC1  ·  Clos fabric</text>
+  <text x="64" y="216" class="m" font-size="14" fill="#9aa0a8">underlay AS 65001x · ERB · anycast IRB</text>
+
+  <!-- DC2 box -->
+  <rect x="880" y="150" width="720" height="860" rx="16" fill="none" stroke="#33363b" stroke-width="2"/>
+  <text x="904" y="190" class="h" font-size="24" fill="#EDEAE3">DC2  ·  Clos fabric</text>
+  <text x="904" y="216" class="m" font-size="14" fill="#9aa0a8">underlay AS 65002x · ERB · anycast IRB</text>
+
+  <!-- ===== underlay links (thin grey) ===== -->
+  <g stroke="#4a4f55" stroke-width="2">
+    <!-- DC1 spine1(240,320) spine2(560,320) -> leaf1(160,580) leaf2(380,580) border1(660,580) -->
+    <line x1="240" y1="356" x2="170" y2="546"/><line x1="240" y1="356" x2="372" y2="546"/><line x1="240" y1="356" x2="650" y2="546"/>
+    <line x1="560" y1="356" x2="180" y2="546"/><line x1="560" y1="356" x2="388" y2="546"/><line x1="560" y1="356" x2="660" y2="546"/>
+    <!-- DC2 spine3(1080,320) spine4(1400,320) -> border2(980,580) leaf3(1240,580) leaf4(1460,580) -->
+    <line x1="1080" y1="356" x2="990" y2="546"/><line x1="1080" y1="356" x2="1240" y2="546"/><line x1="1080" y1="356" x2="1452" y2="546"/>
+    <line x1="1400" y1="356" x2="970" y2="546"/><line x1="1400" y1="356" x2="1248" y2="546"/><line x1="1400" y1="356" x2="1460" y2="546"/>
+  </g>
+  <!-- host links (teal, ESI-LAG dual-home) -->
+  <g stroke="#5FB0B7" stroke-width="3">
+    <line x1="160" y1="614" x2="262" y2="792"/><line x1="380" y1="614" x2="278" y2="792"/>
+    <line x1="1240" y1="614" x2="1362" y2="792"/><line x1="1460" y1="614" x2="1378" y2="792"/>
+  </g>
+
+  <!-- ===== DCI Type-5 link (copper, glowing) ===== -->
+  <line x1="700" y1="580" x2="940" y2="580" stroke="#E08A3C" stroke-width="6" filter="url(#glow)" marker-end="url(#t)" marker-start="url(#t)"/>
+  <rect x="742" y="500" width="156" height="60" rx="10" fill="#0e1012" stroke="#E08A3C" stroke-width="2"/>
+  <text x="820" y="525" text-anchor="middle" class="lbl" font-size="15" fill="#E08A3C">WAN / DCI</text>
+  <text x="820" y="546" text-anchor="middle" class="m" font-size="11" fill="#9aa0a8">eBGP + EVPN</text>
+  <text x="820" y="624" text-anchor="middle" class="m" font-size="13" fill="#E08A3C">Type-5 IP-prefix · VXLAN</text>
+
+  <!-- ===== node helper drawing: hexagons ===== -->
+  <!-- DC1 spines -->
+  <g text-anchor="middle">
+    <polygon points="240,290 268,306 268,338 240,354 212,338 212,306" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="240" y="326" class="h" font-size="15" fill="#E08A3C">SPINE1</text>
+    <polygon points="560,290 588,306 588,338 560,354 532,338 532,306" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="560" y="326" class="h" font-size="15" fill="#E08A3C">SPINE2</text>
+  </g>
+  <!-- DC1 leaves + border (VTEP = teal) -->
+  <g text-anchor="middle">
+    <polygon points="160,550 190,567 190,601 160,618 130,601 130,567" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
+    <text x="160" y="586" class="h" font-size="14" fill="#5FB0B7">LEAF1</text>
+    <polygon points="380,550 410,567 410,601 380,618 350,601 350,567" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
+    <text x="380" y="586" class="h" font-size="14" fill="#5FB0B7">LEAF2</text>
+    <polygon points="660,550 692,567 692,601 660,618 628,601 628,567" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="660" y="582" class="h" font-size="13" fill="#E08A3C">BORDER1</text>
+    <text x="660" y="600" class="m" font-size="9" fill="#9aa0a8">DCI-GW</text>
+  </g>
+  <!-- DC1 host -->
+  <circle cx="270" cy="820" r="34" fill="#0e1012" stroke="#C7CDD4" stroke-width="3"/>
+  <text x="270" y="818" text-anchor="middle" class="h" font-size="14" fill="#EDEAE3">H1</text>
+  <text x="270" y="836" text-anchor="middle" class="m" font-size="9" fill="#9aa0a8">VLAN10</text>
+  <text x="270" y="884" text-anchor="middle" class="m" font-size="12" fill="#9aa0a8">10.1.10.0/24 (TENANT-A)</text>
+
+  <!-- DC2 spines -->
+  <g text-anchor="middle">
+    <polygon points="1080,290 1108,306 1108,338 1080,354 1052,338 1052,306" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="1080" y="326" class="h" font-size="15" fill="#E08A3C">SPINE3</text>
+    <polygon points="1400,290 1428,306 1428,338 1400,354 1372,338 1372,306" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="1400" y="326" class="h" font-size="15" fill="#E08A3C">SPINE4</text>
+  </g>
+  <!-- DC2 border + leaves -->
+  <g text-anchor="middle">
+    <polygon points="980,550 1012,567 1012,601 980,618 948,601 948,567" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="980" y="582" class="h" font-size="13" fill="#E08A3C">BORDER2</text>
+    <text x="980" y="600" class="m" font-size="9" fill="#9aa0a8">DCI-GW</text>
+    <polygon points="1240,550 1270,567 1270,601 1240,618 1210,601 1210,567" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
+    <text x="1240" y="586" class="h" font-size="14" fill="#5FB0B7">LEAF3</text>
+    <polygon points="1460,550 1490,567 1490,601 1460,618 1430,601 1430,567" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
+    <text x="1460" y="586" class="h" font-size="14" fill="#5FB0B7">LEAF4</text>
+  </g>
+  <!-- DC2 host -->
+  <circle cx="1370" cy="820" r="34" fill="#0e1012" stroke="#C7CDD4" stroke-width="3"/>
+  <text x="1370" y="818" text-anchor="middle" class="h" font-size="14" fill="#EDEAE3">H2</text>
+  <text x="1370" y="836" text-anchor="middle" class="m" font-size="9" fill="#9aa0a8">VLAN20</text>
+  <text x="1370" y="884" text-anchor="middle" class="m" font-size="12" fill="#9aa0a8">10.2.20.0/24 (TENANT-A)</text>
+
+  <!-- legend -->
+  <g transform="translate(60,1040)">
+    <polygon points="14,0 30,9 30,27 14,36 -2,27 -2,9" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
+    <text x="46" y="23" class="lbl" font-size="15" fill="#cbd5e1">Spine / Border (copper)</text>
+    <polygon points="364,0 380,9 380,27 364,36 348,27 348,9" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
+    <text x="396" y="23" class="lbl" font-size="15" fill="#cbd5e1">Leaf VTEP (teal)</text>
+    <circle cx="700" cy="18" r="16" fill="#0e1012" stroke="#C7CDD4" stroke-width="3"/>
+    <text x="724" y="23" class="lbl" font-size="15" fill="#cbd5e1">Host</text>
+    <line x1="900" y1="18" x2="980" y2="18" stroke="#E08A3C" stroke-width="5"/>
+    <text x="996" y="23" class="lbl" font-size="15" fill="#cbd5e1">Type-5 DCI</text>
+    <line x1="1180" y1="18" x2="1260" y2="18" stroke="#4a4f55" stroke-width="3"/>
+    <text x="1276" y="23" class="lbl" font-size="15" fill="#cbd5e1">eBGP underlay</text>
+  </g>
+  <text x="1580" y="1140" text-anchor="end" class="m" font-size="12" fill="#5a6068" letter-spacing="2">ALEKSEI CHEKHUN · netops.engineer</text>
+</svg>
