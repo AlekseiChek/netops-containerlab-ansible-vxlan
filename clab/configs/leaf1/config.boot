@@ -14,30 +14,28 @@ interfaces {
         }
     }
     bridge br10 {
-        address 10.1.10.1/24
-        mac 02:1a:10:00:00:0a
+        address 10.10.10.1/24
+        mac 02:10:10:00:00:01
         member {
             interface bond0 {
             }
             interface vxlan10 {
             }
         }
-        vrf CUST
-    }
-    bridge br100 {
-        member {
-            interface vxlan100 {
-            }
-        }
-        vrf CUST
     }
     ethernet eth1 {
         address 10.0.1.0/31
         mtu 9500
+        evpn {
+            uplink
+        }
     }
     ethernet eth2 {
         address 10.0.2.0/31
         mtu 9500
+        evpn {
+            uplink
+        }
     }
     ethernet eth3 {
         mtu 9500
@@ -53,15 +51,6 @@ interfaces {
         port 4789
         source-address 192.0.2.1
         vni 10010
-    }
-    vxlan vxlan100 {
-        mtu 1500
-        parameters {
-            nolearning
-        }
-        port 4789
-        source-address 192.0.2.1
-        vni 100
     }
 }
 protocols {
@@ -87,12 +76,6 @@ protocols {
             }
             l2vpn-evpn {
                 advertise-all-vni
-                advertise {
-                    ipv4 {
-                        unicast {
-                        }
-                    }
-                }
             }
         }
         neighbor 10.0.1.1 {
@@ -110,36 +93,6 @@ protocols {
                 ipv4-unicast {
                 }
                 l2vpn-evpn {
-                }
-            }
-        }
-    }
-}
-vrf {
-    name CUST {
-        table 100
-        vni 100
-        protocols {
-            bgp {
-                system-as 65001
-                parameters {
-                    router-id 192.0.2.1
-                }
-                address-family {
-                    ipv4-unicast {
-                        redistribute {
-                            connected {
-                            }
-                        }
-                    }
-                    l2vpn-evpn {
-                        advertise {
-                            ipv4 {
-                                unicast {
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

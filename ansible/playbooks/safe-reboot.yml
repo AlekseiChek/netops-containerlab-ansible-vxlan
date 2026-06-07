@@ -27,8 +27,8 @@
     boot_retries: 40
     boot_delay: 3
     probe_host: host1           # source host (site-A)
-    probe_src: 10.1.10.10       # host1 bond IP
-    probe_dst: 10.2.20.10       # host2 bond IP (site-B), reached via L3VNI/Type-5
+    probe_src: 10.10.10.11      # host1 bond IP
+    probe_dst: 10.10.10.22      # host2 bond IP (bridged over stretched L2VNI)
   tasks:
     - name: "Start continuous host1->host2 probe (background) BEFORE touching {{ inventory_hostname }}"
       ansible.builtin.shell: |
@@ -80,3 +80,4 @@
         that: "'0% packet loss' in probe.stdout"
         fail_msg: "PACKET LOSS while rebooting {{ inventory_hostname }} → {{ probe.stdout }}"
         success_msg: "{{ inventory_hostname }} OK → {{ probe.stdout_lines | select('search','packet loss') | first }}"
+

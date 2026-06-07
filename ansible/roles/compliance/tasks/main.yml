@@ -28,26 +28,26 @@
     that: "'l2vpn-evpn' in cfg.stdout[0]"
     fail_msg: "{{ inventory_hostname }}: l2vpn-evpn not configured"
 
-- name: Leaf checks — VXLAN VTEP + VRF CUST L3VNI
+- name: Leaf checks — VXLAN VTEP + ESI-LAG + ECMP
   when: "inventory_hostname in groups['leaf']"
   block:
-    - name: VXLAN interface present
+    - name: VXLAN L2VNI interface present
       ansible.builtin.assert:
-        that: "'vxlan vxlan100' in cfg.stdout[0]"
+        that: "'vxlan vxlan10' in cfg.stdout[0]"
         fail_msg: "{{ inventory_hostname }}: no VXLAN VTEP configured"
-    - name: VRF CUST present
+    - name: ESI-LAG bond present (EVPN multihoming)
       ansible.builtin.assert:
-        that: "'vrf name CUST' in cfg.stdout[0]"
-        fail_msg: "{{ inventory_hostname }}: VRF CUST not configured"
+        that: "'bonding bond0 evpn es-id' in cfg.stdout[0]"
+        fail_msg: "{{ inventory_hostname }}: ESI-LAG (es-id) not configured"
     - name: multipath-relax enabled (ECMP across spine ASNs)
       ansible.builtin.assert:
         that: "'multipath-relax' in cfg.stdout[0]"
         fail_msg: "{{ inventory_hostname }}: bestpath as-path multipath-relax missing"
-        success_msg: "{{ inventory_hostname }}: leaf EVPN-VXLAN compliance OK"
+        success_msg: "{{ inventory_hostname }}: leaf EVPN-VXLAN/ESI-LAG compliance OK"
 
 - name: Save compliance report
   ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/compliance_{{ inventory_hostname }}.txt"
     content: |
-      Compliance {{ inventory_hostname }} — eBGP (no IGP) / l2vpn-evpn{{ ' / VXLAN / VRF CUST / multipath-relax' if inventory_hostname in groups['leaf'] else '' }}: OK
+      Compliance {{ inventory_hostname }} — eBGP (no IGP) / l2vpn-evpn{{ ' / VXLAN / ESI-LAG / multipath-relax' if inventory_hostname in groups['leaf'] else '' }}: OK
   delegate_to: localhost

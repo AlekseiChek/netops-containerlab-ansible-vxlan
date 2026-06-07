@@ -3,7 +3,7 @@
 **3-stage EVPN-VXLAN data-center Clos with ESI-LAG multihoming — no kernel modules, no MPLS, runs anywhere Docker runs.**
 
 A self-contained **network operations lab** you can run on a laptop, NAS or EVE-NG host.
-It builds a realistic **DC fabric**: 2 spines + 4 leaves, **eBGP underlay + eBGP EVPN overlay** (no IGP, no route reflectors), **anycast IRB** gateways, **ESI-LAG** dual-homed servers, and **EVPN Type-5** routing between sites — plus an **Ansible pipeline** that reboots the fabric with **proven zero packet loss** (drain → reboot → verify → restore, one device at a time).
+It builds a realistic **DC fabric**: 2 spines + 4 leaves, **eBGP underlay + eBGP EVPN overlay** (no IGP, no route reflectors), **anycast gateway**, **ESI-LAG** dual-homed servers on a **stretched L2VNI** (bridged EVPN Type-2) — plus an **Ansible pipeline** that reboots the fabric with **proven zero packet loss** (drain → reboot → verify → restore, one device at a time).
 
 > **vs. the MPLS variant:** VXLAN is plain UDP/4789 over the eBGP IP underlay. No `mpls_router` kernel module, no `net.mpls.platform_labels` sysctl — it just works wherever Docker runs.
 
@@ -30,12 +30,12 @@ cd ansible && ansible-galaxy collection install -r requirements.yml && ansible-p
 
 Watch it live — open a second terminal while step 4 runs:
 ```bash
-docker exec clab-stage1-host1 ping 10.2.20.10
+docker exec clab-stage1-host1 ping 10.10.10.22
 ```
 The playbook drains → reboots → restores each router one at a time and **asserts 0% packet loss** at the end.
 Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
 
-> **`tools/init-evpn.sh` = verification.** In FRR 10.6 the eBGP spines relay EVPN natively and the L3VNI comes up at boot, so no post-deploy fix is normally needed. The script prints the spine EVPN peers, the Ethernet Segments (ESI-LAG/DF) and the host1->host2 ping. If a boot did not converge, run `FIX=1 bash tools/init-evpn.sh` to restart leaf FRR.
+> **`tools/init-evpn.sh` = verification.** In FRR 10.6 the eBGP spines relay EVPN natively and the L2VNI comes up at boot, so no post-deploy fix is normally needed. The script prints the spine EVPN peers, the Ethernet Segments (ESI-LAG/DF) and the host1↔host2 ping. If a boot did not converge, run `FIX=1 bash tools/init-evpn.sh` to restart leaf FRR.
 
 ---
 
@@ -47,12 +47,12 @@ Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
 
 - **3-stage Clos** — 2 spines (`spine1`,`spine2`), 4 leaves (`leaf1`–`leaf4`). No route reflectors, no IGP.
 - **Spines** (AS `65100` / `65200`) — eBGP EVPN relay; no VTEP, no VRF. Spines don't interconnect.
-- **Leaves** (AS `65001`–`65004`) — **VTEPs** with **anycast IRB**, each dual-uplinked to both spines.
+- **Leaves** (AS `65001`–`65004`) — **VTEPs** with an **anycast gateway**, each dual-uplinked to both spines.
 - **Underlay:** **eBGP** on `/31` fabric links, loopbacks via `redistribute connected`, `maximum-paths ebgp`.
 - **Overlay:** **eBGP `l2vpn-evpn`** on the *same* sessions (spines relay natively in FRR 10.6 — no `retain route-target`).
 - **ECMP:** leaves run `bestpath as-path multipath-relax` (paths via spine1/spine2 have different AS-paths).
-- **Access:** **ESI-LAG** — each server bonds (LACP/802.3ad) to its two leaves as one **Ethernet Segment**; DF election + anycast gateway. No MLAG, no peer-link.
-- **Service:** L2VNI per site (10010 / 10020) + shared **L3VNI 100** (VRF `CUST`); inter-site host traffic routes via **EVPN Type-5**.
+- **Access:** **ESI-LAG** — each server bonds (LACP/802.3ad) to its two leaves as one **Ethernet Segment** (ES1 = leaf1+leaf2, ES2 = leaf3+leaf4); DF election, no MLAG / peer-link.
+- **Service:** one **stretched L2VNI 10010** (`10.10.10.0/24`) + anycast gw `10.10.10.1` on every leaf; **host1↔host2 is bridged EVPN Type-2** across the fabric.
 
 | Node | Role | NOS | ASN | Loopback / VTEP |
 |------|------|-----|-----|-----------------|
@@ -62,10 +62,10 @@ Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
 | leaf2 | Leaf / VTEP (ES1) | VyOS | 65002 | 192.0.2.2 |
 | leaf3 | Leaf / VTEP (ES2) | VyOS | 65003 | 192.0.2.3 |
 | leaf4 | Leaf / VTEP (ES2) | VyOS | 65004 | 192.0.2.4 |
-| host1 | Server, ESI-LAG → leaf1/leaf2 | Linux bond | — | 10.1.10.10 (gw .1) |
-| host2 | Server, ESI-LAG → leaf3/leaf4 | Linux bond | — | 10.2.20.10 (gw .1) |
+| host1 | Server, ESI-LAG → leaf1/leaf2 | Linux bond | — | 10.10.10.11/24 |
+| host2 | Server, ESI-LAG → leaf3/leaf4 | Linux bond | — | 10.10.10.22/24 |
 
-Fabric: `10.0.1.x` = via-spine1, `10.0.2.x` = via-spine2. Site-A = L2VNI 10010 (`10.1.10.0/24`), site-B = L2VNI 10020 (`10.2.20.0/24`).
+Fabric: `10.0.1.x` = via-spine1, `10.0.2.x` = via-spine2. One stretched **L2VNI 10010** = `10.10.10.0/24`, anycast gateway `10.10.10.1`.
 
 ---
 
@@ -78,14 +78,13 @@ Fabric: `10.0.1.x` = via-spine1, `10.0.2.x` = via-spine2. Site-A = L2VNI 10010 (
 | **eBGP EVPN overlay** | all | `docker exec clab-stage1-spine1 vtysh -c "show bgp l2vpn evpn summary"` |
 | **ESI-LAG** Ethernet Segment | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show evpn es"` (Local+Remote, DF) |
 | **LACP bond** on the server | hosts | `docker exec clab-stage1-host1 cat /proc/net/bonding/bond0` (MII up, 2 slaves) |
-| **EVPN Type-5** (inter-site) | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show bgp l2vpn evpn route type prefix"` |
-| **L3VNI 100** (VRF CUST) | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show evpn vni 100"` (State: Up) |
-| **end-to-end** | hosts | `docker exec clab-stage1-host1 ping -c2 10.2.20.10` |
+| **L2VNI 10010** stretched | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show evpn vni 10010"` |
+| **EVPN Type-2** (host MAC/IP) | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show evpn mac vni 10010"` |
+| **end-to-end** | hosts | `docker exec clab-stage1-host1 ping -c2 10.10.10.22` |
 
-**Proof end-to-end** — host1 reaches host2 across the fabric (routed via L3VNI/Type-5 between the two anycast subnets):
+**Proof end-to-end** — host1 reaches host2 across the fabric, bridged over the stretched L2VNI (EVPN Type-2, dual-homed via ESI-LAG at both ends):
 ```bash
-docker exec clab-stage1-host1 ip route        # default via anycast gw 10.1.10.1
-docker exec clab-stage1-host1 ping -c2 10.2.20.10            # host1 -> host2 across the fabric
+docker exec clab-stage1-host1 ping -c2 10.10.10.22            # host1 -> host2 (same subnet, bridged)
 ```
 
 > **Why VXLAN and not MPLS?** VyOS/FRR implement EVPN over VXLAN only (no MPLS data plane for EVPN).
@@ -130,7 +129,7 @@ for n in spine1 spine2 leaf1 leaf2 leaf3 leaf4; do docker exec clab-stage1-$n vt
 
 **Check end-to-end:**
 ```bash
-docker exec clab-stage1-host1 ping -c2 10.2.20.10
+docker exec clab-stage1-host1 ping -c2 10.10.10.22
 ```
 
 **Stop / delete:**
@@ -147,8 +146,8 @@ sudo containerlab destroy -t stage1.clab.yml --cleanup
 ssh vyos@clab-stage1-leaf1
 # useful commands:
 show bgp l2vpn evpn summary        # EVPN peers + prefix count
-show bgp l2vpn evpn route type prefix   # Type-5 EVPN routes
-show ip route vrf CUST             # VRF routing table
+show bgp l2vpn evpn                 # EVPN routes (Type-2 MAC/IP, Type-3 IMET)
+show evpn mac vni 10010            # learned host MACs
 show interfaces vxlan              # VTEP state
 show bgp summary                   # eBGP underlay peers
 ```
@@ -176,7 +175,7 @@ ansible-galaxy collection install -r requirements.yml
 | `facts.yml` | Connectivity check — SSH + BGP summary on every core node | No |
 | `site.yml` | Safe config change — drain → precheck → deploy → postcheck → undrain | Yes |
 | `safe-reboot.yml` | **Zero-loss rolling reboot** — proven by non-stop CE1↔CE2 ping | Reboots only |
-| `compliance-check.yml` | Audit — eBGP (no IGP) / l2vpn-evpn everywhere; VXLAN + VRF CUST + multipath-relax on leaves | No |
+| `compliance-check.yml` | Audit — eBGP (no IGP) / l2vpn-evpn everywhere; VXLAN + ESI-LAG + multipath-relax on leaves | No |
 
 ```bash
 ansible-playbook playbooks/facts.yml                       # connectivity check first
@@ -222,5 +221,6 @@ netops-containerlab-ansible-vxlan/
 ## License
 
 MIT — see `LICENSE`.
+
 
 

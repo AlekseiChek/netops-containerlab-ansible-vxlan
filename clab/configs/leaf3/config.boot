@@ -13,31 +13,29 @@ interfaces {
             es-df-pref 200
         }
     }
-    bridge br20 {
-        address 10.2.20.1/24
-        mac 02:1a:20:00:00:14
+    bridge br10 {
+        address 10.10.10.1/24
+        mac 02:10:10:00:00:01
         member {
             interface bond0 {
             }
-            interface vxlan20 {
+            interface vxlan10 {
             }
         }
-        vrf CUST
-    }
-    bridge br100 {
-        member {
-            interface vxlan100 {
-            }
-        }
-        vrf CUST
     }
     ethernet eth1 {
         address 10.0.1.4/31
         mtu 9500
+        evpn {
+            uplink
+        }
     }
     ethernet eth2 {
         address 10.0.2.4/31
         mtu 9500
+        evpn {
+            uplink
+        }
     }
     ethernet eth3 {
         mtu 9500
@@ -45,23 +43,14 @@ interfaces {
     loopback lo {
         address 192.0.2.3/32
     }
-    vxlan vxlan20 {
+    vxlan vxlan10 {
         mtu 1500
         parameters {
             nolearning
         }
         port 4789
         source-address 192.0.2.3
-        vni 10020
-    }
-    vxlan vxlan100 {
-        mtu 1500
-        parameters {
-            nolearning
-        }
-        port 4789
-        source-address 192.0.2.3
-        vni 100
+        vni 10010
     }
 }
 protocols {
@@ -87,12 +76,6 @@ protocols {
             }
             l2vpn-evpn {
                 advertise-all-vni
-                advertise {
-                    ipv4 {
-                        unicast {
-                        }
-                    }
-                }
             }
         }
         neighbor 10.0.1.5 {
@@ -110,36 +93,6 @@ protocols {
                 ipv4-unicast {
                 }
                 l2vpn-evpn {
-                }
-            }
-        }
-    }
-}
-vrf {
-    name CUST {
-        table 100
-        vni 100
-        protocols {
-            bgp {
-                system-as 65003
-                parameters {
-                    router-id 192.0.2.3
-                }
-                address-family {
-                    ipv4-unicast {
-                        redistribute {
-                            connected {
-                            }
-                        }
-                    }
-                    l2vpn-evpn {
-                        advertise {
-                            ipv4 {
-                                unicast {
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
