@@ -1,11 +1,10 @@
 #!/bin/bash
 # EVPN-Clos + ESI-LAG verification (post-deploy).
 #
-# In FRR 10.6.1 the eBGP spines relay EVPN by default (no "retain route-target
-# all" needed), and the bridge-backed L3VNI SVI comes up at boot. Normally NO
-# post-deploy action is required; this just verifies the fabric.
+# In FRR 10.6 the eBGP spines relay EVPN by default and the bridge-backed L3VNI
+# SVI comes up at boot, so normally NO post-deploy fix is needed; this verifies.
 # Nudge if a boot didn't converge:  FIX=1 bash tools/init-evpn.sh
-set -e
+# (no 'set -e' on purpose: a grep with no match must not abort the script)
 LAB="${LAB:-stage1}"
 
 if [ "${FIX:-0}" = "1" ]; then
@@ -15,11 +14,14 @@ if [ "${FIX:-0}" = "1" ]; then
 fi
 
 echo "=== spine EVPN peers (spine1) ==="
-docker exec "clab-${LAB}-spine1" vtysh -c "show bgp l2vpn evpn summary" | grep -E "Neighbor|10\.0\." | head
+docker exec "clab-${LAB}-spine1" vtysh -c "show bgp l2vpn evpn summary" 2>/dev/null | grep -E "Neighbor|10\.0\." || echo "  (no EVPN peers yet)"
 echo "=== L3VNI 100 (leaf1) ==="
-docker exec "clab-${LAB}-leaf1" vtysh -c "show evpn vni 100" | grep -E "VNI:|State:|L2 VNIs:|Router MAC:"
-echo "=== Ethernet Segments (leaf1 site-A / leaf3 site-B) ==="
-docker exec "clab-${LAB}-leaf1" vtysh -c "show evpn es"
-docker exec "clab-${LAB}-leaf3" vtysh -c "show evpn es"
+docker exec "clab-${LAB}-leaf1" vtysh -c "show evpn vni 100" 2>/dev/null | grep -E "VNI:|State:|L2 VNIs:|Router MAC:" || echo "  (L3VNI not up yet)"
+echo "=== Ethernet Segment site-A (leaf1) ==="
+docker exec "clab-${LAB}-leaf1" vtysh -c "show evpn es" 2>/dev/null || true
+echo "=== Ethernet Segment site-B (leaf3) ==="
+docker exec "clab-${LAB}-leaf3" vtysh -c "show evpn es" 2>/dev/null || true
+echo "=== host1 bond LACP ==="
+docker exec "clab-${LAB}-host1" sh -c "cat /proc/net/bonding/bond0 2>/dev/null | grep -E 'MII Status|Partner Mac|Slave Interface'" || echo "  (bond not formed)"
 echo "=== host1 -> host2 across the fabric (Type-5 routed) ==="
-docker exec "clab-${LAB}-host1" ping -c2 10.2.20.10 || echo "PING FAILED — inspect above"
+docker exec "clab-${LAB}-host1" ping -c2 10.2.20.10 || echo "  PING FAILED — inspect above"
