@@ -1,31 +1,45 @@
 ---
-# eBGP EVPN Clos make-before-break. One role-agnostic lever: BGP graceful-shutdown
-# (RFC 8326). The node re-advertises ALL its routes — underlay (loopbacks/transit)
-# AND overlay EVPN (Type-1 EAD/aliasing, Type-2, Type-3) — with the GRACEFUL_SHUTDOWN
-# community + lowest local-pref. Effect:
-#   * spine -> leaves prefer the other spine (ECMP collapses to one)
-#   * leaf  -> remote VTEPs prefer the ES-peer leaf's aliasing path; dual-homed
-#             (ESI-LAG) hosts shift to their other leaf
-# NOTE: single-homed endpoints on a drained leaf have no redundancy (expected).
+# eBGP EVPN Clos make-before-break — role-aware.
+#
+# Control plane (all nodes): BGP graceful-shutdown (RFC 8326). The node re-advertises
+# ALL routes — underlay + overlay EVPN (Type-1 EAD/aliasing, Type-2, Type-3) — with the
+# GRACEFUL_SHUTDOWN community + lowest local-pref, so peers prefer the other spine / ES peer.
+#
+# Access plane (leaves only): graceful-shutdown does NOT stop a *directly attached*
+# dual-homed host from hashing frames onto this leaf's link — and during the reboot
+# this leaf can't forward them (that was the observed ~9% loss rebooting leaf3). So on a
+# leaf we also admin-down the ESI bond: the host's LACP drops that member and it uses its
+# other leaf BEFORE we touch routing. Make-before-break at both layers. Reversible.
 
-- name: "DRAIN {{ inventory_hostname }} — BGP graceful-shutdown (RFC 8326)"
+# ---------- DRAIN ----------
+- name: "DRAIN {{ inventory_hostname }} — BGP graceful-shutdown (control plane)"
   vyos.vyos.vyos_config:
     lines:
       - set protocols bgp parameters graceful-shutdown
   when: drain_state | default('drain') == 'drain'
 
+- name: "DRAIN {{ inventory_hostname }} — admin-down ESI bond (access plane, leaves only)"
+  vyos.vyos.vyos_config:
+    lines:
+      - set interfaces bonding bond0 disable
+  when:
+    - drain_state | default('drain') == 'drain'
+    - inventory_hostname in groups['leaf']
+
 - name: "Wait for traffic to shift to the redundant spine / ES-peer leaf"
   ansible.builtin.pause: { seconds: "{{ drain_wait }}" }
   when: drain_state | default('drain') == 'drain'
 
-- name: "Verify the node is now drained (advertising GRACEFUL_SHUTDOWN)"
-  ansible.builtin.command: >
-    docker exec {{ ansible_host }} vtysh -c "show bgp l2vpn evpn summary"
-  delegate_to: localhost
-  changed_when: false
-  when: drain_state | default('drain') == 'drain'
+# ---------- UNDRAIN ----------
+- name: "UNDRAIN {{ inventory_hostname }} — re-enable ESI bond (access plane, leaves only)"
+  vyos.vyos.vyos_config:
+    lines:
+      - delete interfaces bonding bond0 disable
+  when:
+    - drain_state | default('drain') == 'undrain'
+    - inventory_hostname in groups['leaf']
 
-- name: "UNDRAIN {{ inventory_hostname }} — clear graceful-shutdown, return to service"
+- name: "UNDRAIN {{ inventory_hostname }} — clear graceful-shutdown (return to service)"
   vyos.vyos.vyos_config:
     lines:
       - delete protocols bgp parameters graceful-shutdown
