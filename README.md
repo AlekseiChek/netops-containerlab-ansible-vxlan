@@ -1,9 +1,9 @@
 # netops-containerlab-ansible-vxlan
 
-**Redundant SP fabric with EVPN-VXLAN L3VPN — no kernel modules, no MPLS, deployable anywhere Docker runs.**
+**3-stage EVPN-VXLAN data-center Clos with ESI-LAG multihoming — no kernel modules, no MPLS, runs anywhere Docker runs.**
 
 A self-contained **network operations lab** you can run on a laptop, NAS or EVE-NG host.
-It builds a realistic **3-stage Clos data-center fabric**: **eBGP underlay + eBGP EVPN overlay** (no IGP, no route reflectors), **EVPN-VXLAN** putting both customer sites in one shared L3VNI, and an **Ansible pipeline** that reboots the fabric with **proven zero packet loss** — drain → reboot → verify → restore, one device at a time.
+It builds a realistic **DC fabric**: 2 spines + 4 leaves, **eBGP underlay + eBGP EVPN overlay** (no IGP, no route reflectors), **anycast IRB** gateways, **ESI-LAG** dual-homed servers, and **EVPN Type-5** routing between sites — plus an **Ansible pipeline** that reboots the fabric with **proven zero packet loss** (drain → reboot → verify → restore, one device at a time).
 
 > **vs. the MPLS variant:** VXLAN is plain UDP/4789 over the eBGP IP underlay. No `mpls_router` kernel module, no `net.mpls.platform_labels` sysctl — it just works wherever Docker runs.
 
@@ -18,10 +18,10 @@ It builds a realistic **3-stage Clos data-center fabric**: **eBGP underlay + eBG
 git clone https://github.com/AlekseiChek/netops-containerlab-ansible-vxlan
 cd netops-containerlab-ansible-vxlan
 
-# 2) build the topology (8 nodes: 2 spines, 4 leaves, 2 customers, ~1–2 min)
+# 2) build the topology (8 nodes: 2 spines, 4 leaves, 2 hosts, ~1-2 min)
 cd clab && sudo containerlab deploy -t stage1.clab.yml && cd ..
 
-# 3) EVPN init — REQUIRED once (spine retain-RT + L3VNI sync; see note below)
+# 3) verify EVPN converged (optional; FIX=1 to nudge if not)
 bash tools/init-evpn.sh
 
 # 4) prove a zero-loss rolling reboot of the fabric
@@ -30,12 +30,12 @@ cd ansible && ansible-galaxy collection install -r requirements.yml && ansible-p
 
 Watch it live — open a second terminal while step 4 runs:
 ```bash
-docker exec clab-stage1-ce1 ping -I 198.51.100.1 203.0.113.1
+docker exec clab-stage1-host1 ping 10.2.20.10
 ```
 The playbook drains → reboots → restores each router one at a time and **asserts 0% packet loss** at the end.
 Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
 
-> **Required once after deploy — `bash tools/init-evpn.sh`:** the **spines** need `retain route-target all` to relay EVPN with no local VRF (VyOS can't express it in `config.boot`, so it's applied to the spines via FRR), and it re-syncs the leaf L3VNIs. Without it the spines drop EVPN routes and CE↔CE won't work.
+> **`tools/init-evpn.sh` = verification.** In FRR 10.6 the eBGP spines relay EVPN natively and the L3VNI comes up at boot, so no post-deploy fix is normally needed. The script prints the spine EVPN peers, the Ethernet Segments (ESI-LAG/DF) and the host1->host2 ping. If a boot did not converge, run `FIX=1 bash tools/init-evpn.sh` to restart leaf FRR.
 
 ---
 
@@ -45,26 +45,27 @@ Tear it all down: `sudo containerlab destroy -t clab/stage1.clab.yml --cleanup`
 
 <sub>Source: [`docs/topology-clos.svg`](docs/topology-clos.svg).</sub>
 
-- **3-stage Clos** — 2 spines (`p1`,`p2`), 4 leaves (`pe1`–`pe4`). No route reflectors, no IGP.
-- **Spines** `p1` (AS `65100`) / `p2` (AS `65200`) — pure eBGP relay; no VTEP, no VRF. Spines don't interconnect.
-- **Leaves** `pe1`–`pe4` (AS `65001`–`65004`) — **VTEPs**, each dual-uplinked to both spines.
+- **3-stage Clos** — 2 spines (`spine1`,`spine2`), 4 leaves (`leaf1`–`leaf4`). No route reflectors, no IGP.
+- **Spines** (AS `65100` / `65200`) — eBGP EVPN relay; no VTEP, no VRF. Spines don't interconnect.
+- **Leaves** (AS `65001`–`65004`) — **VTEPs** with **anycast IRB**, each dual-uplinked to both spines.
 - **Underlay:** **eBGP** on `/31` fabric links, loopbacks via `redistribute connected`, `maximum-paths ebgp`.
-- **Overlay:** **eBGP `l2vpn-evpn`** on the *same* sessions — spines relay EVPN (`retain route-target all`). No RR.
+- **Overlay:** **eBGP `l2vpn-evpn`** on the *same* sessions (spines relay natively in FRR 10.6 — no `retain route-target`).
 - **ECMP:** leaves run `bestpath as-path multipath-relax` (paths via spine1/spine2 have different AS-paths).
-- **Service:** `ce1` + `ce2` share **VRF `CUST`** (L3VNI 100, bridge-backed SVI); customer prefixes ride **EVPN Type-5**.
+- **Access:** **ESI-LAG** — each server bonds (LACP/802.3ad) to its two leaves as one **Ethernet Segment**; DF election + anycast gateway. No MLAG, no peer-link.
+- **Service:** L2VNI per site (10010 / 10020) + shared **L3VNI 100** (VRF `CUST`); inter-site host traffic routes via **EVPN Type-5**.
 
 | Node | Role | NOS | ASN | Loopback / VTEP |
 |------|------|-----|-----|-----------------|
-| p1 | Spine | VyOS | 65100 | 192.0.2.11 |
-| p2 | Spine | VyOS | 65200 | 192.0.2.12 |
-| pe1 | Leaf / VTEP | VyOS | 65001 | 192.0.2.1 |
-| pe2 | Leaf / VTEP | VyOS | 65002 | 192.0.2.2 |
-| pe3 | Leaf / VTEP | VyOS | 65003 | 192.0.2.3 |
-| pe4 | Leaf / VTEP | VyOS | 65004 | 192.0.2.4 |
-| ce1 | Customer → pe1/pe2 | FRR | 65010 | 198.51.100.1 |
-| ce2 | Customer → pe3/pe4 | FRR | 65020 | 203.0.113.1 |
+| spine1 | Spine | VyOS | 65100 | 192.0.2.11 |
+| spine2 | Spine | VyOS | 65200 | 192.0.2.12 |
+| leaf1 | Leaf / VTEP (ES1) | VyOS | 65001 | 192.0.2.1 |
+| leaf2 | Leaf / VTEP (ES1) | VyOS | 65002 | 192.0.2.2 |
+| leaf3 | Leaf / VTEP (ES2) | VyOS | 65003 | 192.0.2.3 |
+| leaf4 | Leaf / VTEP (ES2) | VyOS | 65004 | 192.0.2.4 |
+| host1 | Server, ESI-LAG → leaf1/leaf2 | Linux bond | — | 10.1.10.10 (gw .1) |
+| host2 | Server, ESI-LAG → leaf3/leaf4 | Linux bond | — | 10.2.20.10 (gw .1) |
 
-Fabric: `10.0.1.x` = via-spine1, `10.0.2.x` = via-spine2.
+Fabric: `10.0.1.x` = via-spine1, `10.0.2.x` = via-spine2. Site-A = L2VNI 10010 (`10.1.10.0/24`), site-B = L2VNI 10020 (`10.2.20.0/24`).
 
 ---
 
@@ -72,18 +73,19 @@ Fabric: `10.0.1.x` = via-spine1, `10.0.2.x` = via-spine2.
 
 | Feature | Where | Verify command |
 |---------|-------|----------------|
-| **eBGP underlay** (no IGP) | all | `docker exec clab-stage1-pe1 vtysh -c "show bgp summary"` |
-| **ECMP** across both spines | leaves | `docker exec clab-stage1-pe1 vtysh -c "show ip route 192.0.2.3/32"` (2 next-hops) |
-| **eBGP EVPN overlay** | all | `docker exec clab-stage1-pe1 vtysh -c "show bgp l2vpn evpn summary"` |
-| **EVPN Type-5** routes | leaves | `docker exec clab-stage1-pe1 vtysh -c "show bgp l2vpn evpn route type prefix"` |
-| **VRF CUST** (L3VNI 100) | leaves | `docker exec clab-stage1-pe1 vtysh -c "show evpn vni 100"` (State: Up) |
-| **VXLAN** tunnel | leaves | `docker exec clab-stage1-pe1 ip -d link show vxlan100` |
-| **spine EVPN relay** | spines | `docker exec clab-stage1-p1 vtysh -c "show bgp l2vpn evpn summary"` |
+| **eBGP underlay** (no IGP) | all | `docker exec clab-stage1-leaf1 vtysh -c "show bgp summary"` |
+| **ECMP** across both spines | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show ip route 192.0.2.3/32"` (2 next-hops) |
+| **eBGP EVPN overlay** | all | `docker exec clab-stage1-spine1 vtysh -c "show bgp l2vpn evpn summary"` |
+| **ESI-LAG** Ethernet Segment | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show evpn es"` (Local+Remote, DF) |
+| **LACP bond** on the server | hosts | `docker exec clab-stage1-host1 cat /proc/net/bonding/bond0` (MII up, 2 slaves) |
+| **EVPN Type-5** (inter-site) | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show bgp l2vpn evpn route type prefix"` |
+| **L3VNI 100** (VRF CUST) | leaves | `docker exec clab-stage1-leaf1 vtysh -c "show evpn vni 100"` (State: Up) |
+| **end-to-end** | hosts | `docker exec clab-stage1-host1 ping -c2 10.2.20.10` |
 
-**Proof the two customers share one VRF** — CE1 should learn CE2's prefix over the EVPN-VXLAN and ping end-to-end:
+**Proof end-to-end** — host1 reaches host2 across the fabric (routed via L3VNI/Type-5 between the two anycast subnets):
 ```bash
-docker exec clab-stage1-ce1 vtysh -c "show ip route 203.0.113.0/24"   # learned via EVPN
-docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1      # CE1 -> CE2 across VXLAN
+docker exec clab-stage1-host1 ip route        # default via anycast gw 10.1.10.1
+docker exec clab-stage1-host1 ping -c2 10.2.20.10            # host1 -> host2 across the fabric
 ```
 
 > **Why VXLAN and not MPLS?** VyOS/FRR implement EVPN over VXLAN only (no MPLS data plane for EVPN).
@@ -123,12 +125,12 @@ sudo containerlab inspect -t stage1.clab.yml
 
 VyOS takes ~30–60 s to boot. If BGP/EVPN looks stuck right after deploy, reset once:
 ```bash
-for n in p1 p2 pe1 pe2 pe3 pe4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done
+for n in spine1 spine2 leaf1 leaf2 leaf3 leaf4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done
 ```
 
 **Check end-to-end:**
 ```bash
-docker exec clab-stage1-ce1 ping -c2 -I 198.51.100.1 203.0.113.1
+docker exec clab-stage1-host1 ping -c2 10.2.20.10
 ```
 
 **Stop / delete:**
@@ -142,7 +144,7 @@ sudo containerlab destroy -t stage1.clab.yml --cleanup
 
 **VyOS core nodes — via SSH** (user `vyos`, password `vyos`):
 ```bash
-ssh vyos@clab-stage1-pe1
+ssh vyos@clab-stage1-leaf1
 # useful commands:
 show bgp l2vpn evpn summary        # EVPN peers + prefix count
 show bgp l2vpn evpn route type prefix   # Type-5 EVPN routes
@@ -153,9 +155,9 @@ show bgp summary                   # eBGP underlay peers
 
 **Any node — via docker exec:**
 ```bash
-docker exec -it clab-stage1-pe1 vtysh
-docker exec clab-stage1-p1 vtysh -c "show bgp l2vpn evpn summary"
-docker exec clab-stage1-ce1 vtysh -c "show ip route"
+docker exec -it clab-stage1-leaf1 vtysh
+docker exec clab-stage1-spine1 vtysh -c "show bgp l2vpn evpn summary"
+docker exec clab-stage1-host1 ip route
 ```
 
 > Tip: `docker ps` lists all container names (`clab-stage1-<node>`).
@@ -220,3 +222,5 @@ netops-containerlab-ansible-vxlan/
 ## License
 
 MIT — see `LICENSE`.
+
+

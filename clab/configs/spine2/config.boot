@@ -75,7 +75,7 @@ protocols {
     }
 }
 system {
-    host-name p2
+    host-name spine2
     login {
         user vyos {
             authentication {

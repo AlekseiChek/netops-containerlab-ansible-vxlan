@@ -1,4 +1,29 @@
 interfaces {
+    bonding bond0 {
+        mode 802.3ad
+        lacp-rate fast
+        system-mac 02:00:00:00:0b:02
+        member {
+            interface eth3 {
+            }
+        }
+        evpn {
+            es-id 2
+            es-sys-mac 02:00:00:00:00:02
+            es-df-pref 100
+        }
+    }
+    bridge br20 {
+        address 10.2.20.1/24
+        mac 02:1a:20:00:00:14
+        member {
+            interface bond0 {
+            }
+            interface vxlan20 {
+            }
+        }
+        vrf CUST
+    }
     bridge br100 {
         member {
             interface vxlan100 {
@@ -15,12 +40,19 @@ interfaces {
         mtu 9500
     }
     ethernet eth3 {
-        address 10.1.2.2/31
         mtu 9500
-        vrf CUST
     }
     loopback lo {
         address 192.0.2.4/32
+    }
+    vxlan vxlan20 {
+        mtu 1500
+        parameters {
+            nolearning
+        }
+        port 4789
+        source-address 192.0.2.4
+        vni 10020
     }
     vxlan vxlan100 {
         mtu 1500
@@ -109,19 +141,12 @@ vrf {
                         }
                     }
                 }
-                neighbor 10.1.2.3 {
-                    remote-as 65020
-                    address-family {
-                        ipv4-unicast {
-                        }
-                    }
-                }
             }
         }
     }
 }
 system {
-    host-name pe4
+    host-name leaf4
     login {
         user vyos {
             authentication {

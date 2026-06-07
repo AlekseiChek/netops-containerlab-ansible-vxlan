@@ -146,7 +146,7 @@ vrf {
     }
 }
 system {
-    host-name pe2
+    host-name leaf2
     login {
         user vyos {
             authentication {

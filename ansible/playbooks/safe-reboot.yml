@@ -3,8 +3,8 @@
 # continuous probe that runs IN PARALLEL across the whole maintenance window.
 #
 # Per node, one at a time (serial:1, stop on first failure):
-#   start continuous ce1->ce2 probe (background)   <-- begins BEFORE touching the node
-#   DRAIN (vyos_config: IS-IS overload-bit + BGP graceful-shutdown)
+#   start continuous host1->host2 probe (background) <-- begins BEFORE touching the node
+#   DRAIN (vyos_config: BGP graceful-shutdown)
 #   reboot = restart FRR inside VyOS (RP reload; container/SSH stay up, drain persists)
 #   wait until FRR + all BGP sessions are back
 #   UNDRAIN
@@ -26,17 +26,18 @@
   vars:
     boot_retries: 40
     boot_delay: 3
-    probe_src: 198.51.100.1     # ce1 loopback
-    probe_dst: 203.0.113.1      # ce2 loopback
+    probe_host: host1           # source host (site-A)
+    probe_src: 10.1.10.10       # host1 bond IP
+    probe_dst: 10.2.20.10       # host2 bond IP (site-B), reached via L3VNI/Type-5
   tasks:
-    - name: "Start continuous ce1->ce2 probe (background) BEFORE touching {{ inventory_hostname }}"
+    - name: "Start continuous host1->host2 probe (background) BEFORE touching {{ inventory_hostname }}"
       ansible.builtin.shell: |
-        docker exec clab-stage1-ce1 sh -c 'pkill -x ping 2>/dev/null; : > /tmp/probe.log'
-        docker exec -d clab-stage1-ce1 sh -c 'ping -i 0.2 -I {{ probe_src }} {{ probe_dst }} >> /tmp/probe.log 2>&1'
+        docker exec clab-stage1-{{ probe_host }} sh -c 'pkill -x ping 2>/dev/null; : > /tmp/probe.log'
+        docker exec -d clab-stage1-{{ probe_host }} sh -c 'ping -i 0.2 -I {{ probe_src }} {{ probe_dst }} >> /tmp/probe.log 2>&1'
       delegate_to: localhost
       changed_when: false
 
-    - name: "DRAIN {{ inventory_hostname }} (overload-bit + BGP graceful-shutdown)"
+    - name: "DRAIN {{ inventory_hostname }} (BGP graceful-shutdown)"
       ansible.builtin.import_role: { name: drain }
       vars: { drain_state: drain }
 
@@ -55,7 +56,7 @@
       changed_when: false
 
     - name: "Wait until ALL BGP sessions on {{ inventory_hostname }} are re-Established"
-      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c 'show bgp ipv4 unicast summary'"
+      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c 'show bgp summary'"
       delegate_to: localhost
       register: bsum
       until: "bsum.rc == 0 and not (bsum.stdout | regex_search('Active|Idle|Connect|OpenSent|OpenConfirm'))"
@@ -69,7 +70,7 @@
 
     - name: "Stop the probe and read its summary"
       ansible.builtin.shell: >
-        docker exec clab-stage1-ce1 sh -c 'pkill -INT -x ping 2>/dev/null || true; sleep 1; tail -n 4 /tmp/probe.log'
+        docker exec clab-stage1-{{ probe_host }} sh -c 'pkill -INT -x ping 2>/dev/null || true; sleep 1; tail -n 4 /tmp/probe.log'
       delegate_to: localhost
       register: probe
       changed_when: false

@@ -2,24 +2,24 @@ interfaces {
     bonding bond0 {
         mode 802.3ad
         lacp-rate fast
-        system-mac 02:00:00:00:0a:01
+        system-mac 02:00:00:00:0b:02
         member {
             interface eth3 {
             }
         }
         evpn {
-            es-id 1
-            es-sys-mac 02:00:00:00:00:01
+            es-id 2
+            es-sys-mac 02:00:00:00:00:02
             es-df-pref 200
         }
     }
-    bridge br10 {
-        address 10.1.10.1/24
-        mac 02:1a:10:00:00:0a
+    bridge br20 {
+        address 10.2.20.1/24
+        mac 02:1a:20:00:00:14
         member {
             interface bond0 {
             }
-            interface vxlan10 {
+            interface vxlan20 {
             }
         }
         vrf CUST
@@ -32,27 +32,27 @@ interfaces {
         vrf CUST
     }
     ethernet eth1 {
-        address 10.0.1.0/31
+        address 10.0.1.4/31
         mtu 9500
     }
     ethernet eth2 {
-        address 10.0.2.0/31
+        address 10.0.2.4/31
         mtu 9500
     }
     ethernet eth3 {
         mtu 9500
     }
     loopback lo {
-        address 192.0.2.1/32
+        address 192.0.2.3/32
     }
-    vxlan vxlan10 {
+    vxlan vxlan20 {
         mtu 1500
         parameters {
             nolearning
         }
         port 4789
-        source-address 192.0.2.1
-        vni 10010
+        source-address 192.0.2.3
+        vni 10020
     }
     vxlan vxlan100 {
         mtu 1500
@@ -60,15 +60,15 @@ interfaces {
             nolearning
         }
         port 4789
-        source-address 192.0.2.1
+        source-address 192.0.2.3
         vni 100
     }
 }
 protocols {
     bgp {
-        system-as 65001
+        system-as 65003
         parameters {
-            router-id 192.0.2.1
+            router-id 192.0.2.3
             bestpath {
                 as-path {
                     multipath-relax
@@ -95,7 +95,7 @@ protocols {
                 }
             }
         }
-        neighbor 10.0.1.1 {
+        neighbor 10.0.1.5 {
             remote-as 65100
             address-family {
                 ipv4-unicast {
@@ -104,7 +104,7 @@ protocols {
                 }
             }
         }
-        neighbor 10.0.2.1 {
+        neighbor 10.0.2.5 {
             remote-as 65200
             address-family {
                 ipv4-unicast {
@@ -121,9 +121,9 @@ vrf {
         vni 100
         protocols {
             bgp {
-                system-as 65001
+                system-as 65003
                 parameters {
-                    router-id 192.0.2.1
+                    router-id 192.0.2.3
                 }
                 address-family {
                     ipv4-unicast {
@@ -146,7 +146,7 @@ vrf {
     }
 }
 system {
-    host-name pe1
+    host-name leaf3
     login {
         user vyos {
             authentication {

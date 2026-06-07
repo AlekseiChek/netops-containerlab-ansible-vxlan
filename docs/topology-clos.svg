@@ -12,7 +12,7 @@
   <rect x="0" y="0" width="10" height="940" fill="#E08A3C"/>
 
   <text x="60" y="60" class="m" font-size="15" fill="#5FB0B7" letter-spacing="3">NETOPS · SRE  /  CLOS FABRIC</text>
-  <text x="58" y="112" class="h" font-size="42" fill="#E08A3C">EVPN-VXLAN Clos — eBGP underlay + eBGP overlay</text>
+  <text x="58" y="112" class="h" font-size="42" fill="#E08A3C">EVPN-VXLAN Clos + ESI-LAG — eBGP fabric</text>
 
   <!-- tier labels -->
   <text x="1380" y="250" text-anchor="end" class="lbl" font-size="16" fill="#9aa0a8">SPINE</text>
@@ -38,40 +38,40 @@
   <g text-anchor="middle">
     <polygon points="520,236 556,256 556,300 520,320 484,300 484,256" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
     <text x="520" y="276" class="h" font-size="16" fill="#E08A3C">SPINE1</text>
-    <text x="520" y="296" class="m" font-size="10" fill="#9aa0a8">p1 · AS65000</text>
+    <text x="520" y="296" class="m" font-size="10" fill="#9aa0a8">spine1 · AS65100</text>
     <polygon points="920,236 956,256 956,300 920,320 884,300 884,256" fill="#0e1012" stroke="#E08A3C" stroke-width="3"/>
     <text x="920" y="276" class="h" font-size="16" fill="#E08A3C">SPINE2</text>
-    <text x="920" y="296" class="m" font-size="10" fill="#9aa0a8">p2 · AS65000</text>
+    <text x="920" y="296" class="m" font-size="10" fill="#9aa0a8">spine2 · AS65200</text>
   </g>
 
   <!-- ===== LEAVES (teal VTEP) ===== -->
   <g text-anchor="middle">
     <polygon points="270,486 304,505 304,547 270,566 236,547 236,505" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
     <text x="270" y="522" class="h" font-size="15" fill="#5FB0B7">LEAF1</text>
-    <text x="270" y="540" class="m" font-size="9" fill="#9aa0a8">pe1·AS65001</text>
+    <text x="270" y="540" class="m" font-size="9" fill="#9aa0a8">leaf1·AS65001</text>
     <polygon points="540,486 574,505 574,547 540,566 506,547 506,505" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
     <text x="540" y="522" class="h" font-size="15" fill="#5FB0B7">LEAF2</text>
-    <text x="540" y="540" class="m" font-size="9" fill="#9aa0a8">pe2·AS65002</text>
+    <text x="540" y="540" class="m" font-size="9" fill="#9aa0a8">leaf2·AS65002</text>
     <polygon points="860,486 894,505 894,547 860,566 826,547 826,505" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
     <text x="860" y="522" class="h" font-size="15" fill="#5FB0B7">LEAF3</text>
-    <text x="860" y="540" class="m" font-size="9" fill="#9aa0a8">pe3·AS65003</text>
+    <text x="860" y="540" class="m" font-size="9" fill="#9aa0a8">leaf3·AS65003</text>
     <polygon points="1140,486 1174,505 1174,547 1140,566 1106,547 1106,505" fill="#0e1012" stroke="#5FB0B7" stroke-width="3"/>
     <text x="1140" y="522" class="h" font-size="15" fill="#5FB0B7">LEAF4</text>
-    <text x="1140" y="540" class="m" font-size="9" fill="#9aa0a8">pe4·AS65004</text>
+    <text x="1140" y="540" class="m" font-size="9" fill="#9aa0a8">leaf4·AS65004</text>
   </g>
 
   <!-- ===== HOSTS ===== -->
   <g text-anchor="middle">
     <circle cx="418" cy="740" r="34" fill="#0e1012" stroke="#C7CDD4" stroke-width="3"/>
-    <text x="418" y="746" class="h" font-size="15" fill="#EDEAE3">CE1</text>
-    <text x="418" y="804" class="m" font-size="12" fill="#9aa0a8">198.51.100.0/24 · VRF CUST</text>
+    <text x="418" y="746" class="h" font-size="15" fill="#EDEAE3">host1</text>
+    <text x="418" y="804" class="m" font-size="12" fill="#9aa0a8">host1 10.1.10.10 · ESI-LAG</text>
     <circle cx="1014" cy="740" r="34" fill="#0e1012" stroke="#C7CDD4" stroke-width="3"/>
-    <text x="1014" y="746" class="h" font-size="15" fill="#EDEAE3">CE2</text>
-    <text x="1014" y="804" class="m" font-size="12" fill="#9aa0a8">203.0.113.0/24 · VRF CUST</text>
+    <text x="1014" y="746" class="h" font-size="15" fill="#EDEAE3">host2</text>
+    <text x="1014" y="804" class="m" font-size="12" fill="#9aa0a8">host2 10.2.20.10 · ESI-LAG</text>
   </g>
 
   <!-- info band -->
-  <text x="60" y="868" class="m" font-size="14" fill="#5FB0B7">underlay: eBGP /31 links  ·  overlay: eBGP l2vpn-evpn (no RR, spines relay)  ·  VRF CUST L3VNI 100  ·  no IS-IS</text>
+  <text x="60" y="868" class="m" font-size="14" fill="#5FB0B7">underlay+overlay eBGP (no RR/IGP) · ESI-LAG dual-homing + anycast IRB · L2VNI 10010/10020 · L3VNI 100 (Type-5 inter-site)</text>
 
   <!-- legend -->
   <g transform="translate(60,892)">
@@ -84,3 +84,4 @@
   </g>
   <text x="1380" y="922" text-anchor="end" class="m" font-size="12" fill="#5a6068" letter-spacing="2">ALEKSEI CHEKHUN · netops.engineer</text>
 </svg>
+
