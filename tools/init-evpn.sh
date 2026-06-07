@@ -1,31 +1,42 @@
 #!/bin/bash
-# Post-deploy EVPN convergence helper (safety net).
+# Post-deploy EVPN init for the eBGP Clos + ESI-LAG. Run once after deploy.
 #
-# With the bridge-backed L3VNI SVI baked into config.boot, the L3VNI should
-# come up at boot on its own. If bgpd loses the zebra L3VNI race on a given
-# boot (no Type-5 routes, "show bgp l2vpn evpn vni" empty), this script does a
-# clean FRR restart on the PEs, which re-syncs bgpd with zebra (the SVI and
-# router-MAC already exist, so the L3VNI registers correctly).
+# 1) SPINES (p1,p2) relay EVPN with no local VRF -> they need "retain route-target
+#    all" so they keep/re-advertise EVPN routes whose RT they do not import.
+#    VyOS cannot express this in config.boot, so it is applied via FRR here.
+# 2) LEAVES (pe1-4): a clean frr restart re-syncs the L3VNI/Ethernet-Segment
+#    state with zebra if bgpd lost the boot race.
 #
-# USAGE (only if EVPN has not converged after deploy):
 #   bash tools/init-evpn.sh
 
 set -e
 LAB="${LAB:-stage1}"
 
-echo "[evpn-init] Restarting FRR on all PEs to re-sync L3VNI with zebra..."
-for n in pe1 pe2 pe3 pe4; do
-  ctr="clab-${LAB}-${n}"
-  echo "  -> $ctr"
-  docker exec "$ctr" systemctl restart frr
+echo "[init] spines: retain route-target all (EVPN relay)"
+for s in p1 p2; do
+  asn=$([ "$s" = "p1" ] && echo 65100 || echo 65200)
+  docker exec "clab-${LAB}-${s}" vtysh \
+    -c "conf t" \
+    -c "router bgp ${asn}" \
+    -c " address-family l2vpn evpn" \
+    -c "  retain route-target all" \
+    -c " exit-address-family" \
+    -c "end" 2>/dev/null && echo "  ${s} ok" || echo "  ${s}: command rejected (check FRR syntax)"
 done
 
-echo "[evpn-init] Waiting 30s for EVPN to converge..."
+echo "[init] leaves: re-sync L3VNI / Ethernet-Segment"
+for l in pe1 pe2 pe3 pe4; do
+  docker exec "clab-${LAB}-${l}" systemctl restart frr
+done
+
+echo "[init] waiting 30s for EVPN to converge..."
 sleep 30
 
-echo "[evpn-init] === L3VNI state (pe1) ==="
-docker exec "clab-${LAB}-pe1" vtysh -c "show evpn vni 100"
-echo "[evpn-init] === EVPN summary (rr1) ==="
-docker exec "clab-${LAB}-rr1" vtysh -c "show bgp l2vpn evpn summary" | grep -E "Neighbor|192\.0\."
-echo "[evpn-init] === CE1 -> CE2 ==="
-docker exec "clab-${LAB}-ce1" ping -c2 -I 198.51.100.1 203.0.113.1 || echo "PING FAILED — inspect output above"
+echo "=== spine EVPN peers (p1) ==="
+docker exec "clab-${LAB}-p1" vtysh -c "show bgp l2vpn evpn summary" | grep -E "Neighbor|10\.0\." | head
+echo "=== L3VNI 100 (pe1) ==="
+docker exec "clab-${LAB}-pe1" vtysh -c "show evpn vni 100" | grep -E "VNI:|State:|L2 VNIs:|Router MAC:"
+echo "=== Ethernet Segment / ESI-LAG (pe1) ==="
+docker exec "clab-${LAB}-pe1" vtysh -c "show evpn es" || true
+echo "=== ce1 host -> anycast gateway 10.1.10.1 ==="
+docker exec "clab-${LAB}-ce1" ping -c2 10.1.10.1 || echo "PING FAILED — check ESI/anycast above"
