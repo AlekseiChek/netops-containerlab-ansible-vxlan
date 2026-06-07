@@ -1,39 +1,61 @@
 ---
-# Deterministic health gate on VyOS (eBGP Clos): re-read state vs precheck baseline.
-# A failed assert stops the play (any_errors_fatal) => the change is blocked.
-
+# EVPN-VXLAN deterministic health GATE (eBGP Clos): re-read vs precheck baseline.
+# A failed assert + any_errors_fatal => the rollout stops on this node.
 - name: Wait for reconvergence
   ansible.builtin.pause: { seconds: "{{ convergence_wait }}" }
 
-- name: Re-read BGP / EVPN / deployed route
-  vyos.vyos.vyos_command:
-    commands:
-      - show bgp summary
-      - show bgp l2vpn evpn summary
-      - show ip route {{ deploy_route }}
-  register: post
+- name: Re-read underlay / overlay / EVPN state + deployed change
+  ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c '{{ item }}'"
+  delegate_to: localhost
   changed_when: false
+  loop:
+    - show bgp summary
+    - show bgp l2vpn evpn summary
+    - show evpn vni
+    - show evpn mac vni 10010
+    - show ip route {{ deploy_route }}
+  register: post
 
-- name: GATE — BGP did not degrade (down-peers not increased)
-  ansible.builtin.assert:
-    that: "(post.stdout[0] | regex_findall('Active|Idle|Connect') | length) <= (pre_bgp_down | int)"
-    fail_msg: "{{ inventory_hostname }}: BGP peers degraded post-deploy — ROLLBACK"
+- name: Recompute counters
+  ansible.builtin.set_fact:
+    post_underlay_down: "{{ post.results[0].stdout | regex_findall('Active|Idle|Connect|OpenSent|OpenConfirm') | length }}"
+    post_evpn_down:     "{{ post.results[1].stdout | regex_findall('Active|Idle|Connect|OpenSent|OpenConfirm') | length }}"
+    post_vni_up:        "{{ post.results[2].stdout | regex_findall('10010') | length }}"
+    post_mac_count:     "{{ post.results[3].stdout | regex_search('Number of MACs[^0-9]*([0-9]+)', '\\1') | default('0', true) }}"
+    post_dup:           "{{ post.results[3].stdout | regex_findall('[Dd]uplicate') | length }}"
 
-- name: GATE — change is actually present
+- name: GATE — underlay BGP not degraded
   ansible.builtin.assert:
-    that: "'blackhole' in (post.stdout[2] | lower)"
+    that: "post_underlay_down | int <= pre_underlay_down | int"
+    fail_msg: "{{ inventory_hostname }}: underlay BGP degraded post-change — ROLLBACK"
+
+- name: GATE — EVPN overlay not degraded
+  ansible.builtin.assert:
+    that: "post_evpn_down | int <= pre_evpn_down | int"
+    fail_msg: "{{ inventory_hostname }}: EVPN sessions degraded post-change — ROLLBACK"
+
+- name: GATE — leaf VNI still up, no new duplicate, endpoints retained
+  ansible.builtin.assert:
+    that:
+      - "post_vni_up | int >= pre_vni_up | int"
+      - "post_dup | int == 0"
+      - "post_mac_count | int >= pre_mac_count | int"
+    fail_msg: "{{ inventory_hostname }}: VNI/MAC/duplicate regression — ROLLBACK (was {{ pre_mac_count }} MACs, now {{ post_mac_count }})"
+  when: "inventory_hostname in groups['leaf']"
+
+- name: GATE — intended change is present
+  ansible.builtin.assert:
+    that: "'blackhole' in (post.results[4].stdout | lower)"
     fail_msg: "{{ inventory_hostname }}: deployed route missing — change did not apply"
     success_msg: "{{ inventory_hostname }}: health gate PASS"
 
-- name: Write postcheck/diff report
+- name: Write postcheck report
   ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/postcheck_{{ inventory_hostname }}.txt"
     content: |
       === POSTCHECK {{ inventory_hostname }} ===  deployed: {{ deploy_ts | default('N/A') }}
-      baseline BGP down-peers (pre): {{ pre_bgp_down | default('?') }}
-      --- BGP summary (post) ---
-      {{ post.stdout[0] }}
-      --- BGP l2vpn evpn summary (post) ---
-      {{ post.stdout[1] }}
+      underlay down pre/post: {{ pre_underlay_down }}/{{ post_underlay_down }}
+      evpn down  pre/post: {{ pre_evpn_down }}/{{ post_evpn_down }}
+      VNIs pre/post: {{ pre_vni_up }}/{{ post_vni_up }} | MACs pre/post: {{ pre_mac_count }}/{{ post_mac_count }}
       Gate: PASS
   delegate_to: localhost

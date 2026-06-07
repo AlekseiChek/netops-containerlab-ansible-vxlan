@@ -1,0 +1,11 @@
+---
+# Put node(s) into maintenance mode (BGP graceful-shutdown), then verify the
+# redundant path is carrying. Operator runs this, does manual work, then undrain.yml.
+#   ansible-playbook playbooks/drain.yml -e target=leaf3
+- name: Drain node(s) for maintenance
+  hosts: "{{ target | mandatory }}"
+  gather_facts: false
+  serial: 1
+  tasks:
+    - import_role: { name: drain }
+      vars: { drain_state: drain }

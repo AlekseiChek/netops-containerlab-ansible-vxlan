@@ -1,0 +1,43 @@
+---
+# Read-only EVPN-VXLAN fabric health gate (NO drain, NO change).
+# Run in CI, on a schedule, or as the pre-maintenance baseline. Fails loudly if
+# the fabric is not healthy. Checks every VyOS node via FRR (vtysh).
+#   ansible-playbook playbooks/fabric-validate.yml
+- name: Validate eBGP EVPN-VXLAN fabric health
+  hosts: core
+  gather_facts: false
+  any_errors_fatal: false      # check ALL nodes, report every failure
+  tasks:
+    - name: Collect underlay / overlay / EVPN state
+      ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c '{{ item }}'"
+      delegate_to: localhost
+      changed_when: false
+      loop:
+        - show bgp summary
+        - show bgp l2vpn evpn summary
+        - show evpn vni
+        - show evpn mac vni 10010
+      register: v
+
+    - name: Compute counters
+      ansible.builtin.set_fact:
+        underlay_down: "{{ v.results[0].stdout | regex_findall('Active|Idle|Connect|OpenSent|OpenConfirm') | length }}"
+        evpn_down:     "{{ v.results[1].stdout | regex_findall('Active|Idle|Connect|OpenSent|OpenConfirm') | length }}"
+        vni_up:        "{{ v.results[2].stdout | regex_findall('10010') | length }}"
+        dup:           "{{ v.results[3].stdout | regex_findall('[Dd]uplicate') | length }}"
+
+    - name: "ASSERT {{ inventory_hostname }} — underlay + overlay established, no dup-MAC"
+      ansible.builtin.assert:
+        that:
+          - "underlay_down | int == 0"
+          - "evpn_down | int == 0"
+          - "dup | int == 0"
+        fail_msg: "{{ inventory_hostname }}: FABRIC UNHEALTHY (underlay_down={{ underlay_down }} evpn_down={{ evpn_down }} dup={{ dup }})"
+        success_msg: "{{ inventory_hostname }}: OK (underlay+overlay up, {{ vni_up }} VNI, no dup)"
+
+    - name: "ASSERT leaf VNI up"
+      ansible.builtin.assert:
+        that: "vni_up | int >= 1"
+        fail_msg: "{{ inventory_hostname }}: no EVPN VNI up"
+      when: "inventory_hostname in groups['leaf']"
+

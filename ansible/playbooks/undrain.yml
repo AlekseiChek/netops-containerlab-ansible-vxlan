@@ -1,0 +1,10 @@
+---
+# Return node(s) to service (clear BGP graceful-shutdown), wait for re-advert + DF re-election.
+#   ansible-playbook playbooks/undrain.yml -e target=leaf3
+- name: Undrain node(s) — back in service
+  hosts: "{{ target | mandatory }}"
+  gather_facts: false
+  serial: 1
+  tasks:
+    - import_role: { name: drain }
+      vars: { drain_state: undrain }

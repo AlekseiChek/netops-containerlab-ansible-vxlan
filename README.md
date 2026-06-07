@@ -170,19 +170,30 @@ cd ../ansible
 ansible-galaxy collection install -r requirements.yml
 ```
 
-| Playbook | What it does | Changes network? |
-|----------|-------------|-----------------|
-| `facts.yml` | Connectivity check — SSH + BGP summary on every core node | No |
-| `site.yml` | Safe config change — drain → precheck → deploy → postcheck → undrain | Yes |
-| `safe-reboot.yml` | **Zero-loss rolling reboot** — proven by non-stop CE1↔CE2 ping | Reboots only |
-| `compliance-check.yml` | Audit — eBGP (no IGP) / l2vpn-evpn everywhere; VXLAN + ESI-LAG + multipath-relax on leaves | No |
+Real-world DC operations set — read-only checks (no drain) and change ops (with drain):
+
+| Playbook | Drain? | What it does |
+|----------|--------|--------------|
+| `facts.yml` | no | Reachability + version + BGP/EVPN status on every fabric node |
+| `fabric-validate.yml` | no | **Read-only health gate** — underlay+overlay sessions, VNIs, ES/DF, duplicate-MAC across the whole fabric. Run in CI / scheduled / as the pre-change baseline |
+| `compliance-check.yml` | no | Config-intent audit — eBGP (no IGP) / l2vpn-evpn everywhere; VXLAN + ESI-LAG + multipath-relax on leaves |
+| `site.yml` | **yes** | Safe rolling config change — per node: drain → precheck → deploy → **EVPN health gate** → undrain |
+| `safe-reboot.yml` | **yes** | **Zero-loss rolling reboot** — non-stop host1↔host2 probe asserts 0% loss |
+| `drain.yml` / `undrain.yml` | drain-only | Operator maintenance mode — drain a node, do manual work, undrain |
+
+The pre/postchecks are **EVPN-aware**: they gate on underlay *and* overlay BGP fully established, VNIs up, no duplicate-MAC, and endpoint MAC counts not regressing.
 
 ```bash
-ansible-playbook playbooks/facts.yml                       # connectivity check first
-ansible-playbook playbooks/safe-reboot.yml                 # whole core, one at a time
-ansible-playbook playbooks/safe-reboot.yml -e target=site_b
-ansible-playbook playbooks/compliance-check.yml            # audit
+ansible-playbook playbooks/facts.yml                       # quick status
+ansible-playbook playbooks/fabric-validate.yml             # full read-only health gate (CI)
+ansible-playbook playbooks/compliance-check.yml            # config audit
+ansible-playbook playbooks/safe-reboot.yml                 # rolling reboot, zero loss
+ansible-playbook playbooks/safe-reboot.yml -e target=site_a
+ansible-playbook playbooks/drain.yml   -e target=leaf3     # maintenance mode on
+ansible-playbook playbooks/undrain.yml -e target=leaf3     # back in service
 ```
+
+**Drain = BGP graceful-shutdown (RFC 8326).** One role-agnostic lever: the node re-advertises *all* routes (underlay loopbacks/transit **and** overlay EVPN Type-1/2/3) with the GRACEFUL_SHUTDOWN community + lowest local-pref, so peers immediately prefer the other spine / the ES-peer leaf. Make-before-break, fully reversible.
 
 ---
 

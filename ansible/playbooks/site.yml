@@ -1,5 +1,9 @@
 ---
-# Safe rolling change on the IS-IS core: one node per wave, stop on first failure.
+# Safe rolling config change on the eBGP EVPN Clos: one node per wave, stop on first failure.
+# Per node: drain -> precheck (EVPN health gate) -> deploy -> postcheck (gate) -> undrain.
+#   ansible-playbook playbooks/site.yml                 (whole fabric, serial)
+#   ansible-playbook playbooks/site.yml -e target=leaf3 (one node)
+#   ansible-playbook playbooks/site.yml -e target=site_a
 - name: NetOps safe change — drain -> precheck -> deploy -> postcheck -> undrain
   hosts: "{{ target | default('core') }}"
   gather_facts: false

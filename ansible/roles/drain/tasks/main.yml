@@ -1,22 +1,36 @@
 ---
-# eBGP make-before-break (vyos_config auto-commits). One reversible lever:
-#  - BGP graceful-shutdown (RFC 8326): the node re-advertises its paths with the
-#    GRACEFUL_SHUTDOWN community + lowest local-pref, so the fabric steers around it.
-# In a Clos with two spines and dual-homed leaves, draining shifts traffic to the
-# redundant path while sessions stay up. Reversible; no IGP involved.
+# eBGP EVPN Clos make-before-break. One role-agnostic lever: BGP graceful-shutdown
+# (RFC 8326). The node re-advertises ALL its routes — underlay (loopbacks/transit)
+# AND overlay EVPN (Type-1 EAD/aliasing, Type-2, Type-3) — with the GRACEFUL_SHUTDOWN
+# community + lowest local-pref. Effect:
+#   * spine -> leaves prefer the other spine (ECMP collapses to one)
+#   * leaf  -> remote VTEPs prefer the ES-peer leaf's aliasing path; dual-homed
+#             (ESI-LAG) hosts shift to their other leaf
+# NOTE: single-homed endpoints on a drained leaf have no redundancy (expected).
 
-- name: "DRAIN {{ inventory_hostname }} — BGP graceful-shutdown"
+- name: "DRAIN {{ inventory_hostname }} — BGP graceful-shutdown (RFC 8326)"
   vyos.vyos.vyos_config:
     lines:
       - set protocols bgp parameters graceful-shutdown
   when: drain_state | default('drain') == 'drain'
 
-- name: "Wait for traffic to shift to the redundant spine/path"
+- name: "Wait for traffic to shift to the redundant spine / ES-peer leaf"
   ansible.builtin.pause: { seconds: "{{ drain_wait }}" }
   when: drain_state | default('drain') == 'drain'
 
-- name: "UNDRAIN {{ inventory_hostname }} — clear graceful-shutdown"
+- name: "Verify the node is now drained (advertising GRACEFUL_SHUTDOWN)"
+  ansible.builtin.command: >
+    docker exec {{ ansible_host }} vtysh -c "show bgp l2vpn evpn summary"
+  delegate_to: localhost
+  changed_when: false
+  when: drain_state | default('drain') == 'drain'
+
+- name: "UNDRAIN {{ inventory_hostname }} — clear graceful-shutdown, return to service"
   vyos.vyos.vyos_config:
     lines:
       - delete protocols bgp parameters graceful-shutdown
+  when: drain_state | default('drain') == 'undrain'
+
+- name: "Wait for re-advertisement + EVPN DF re-election after undrain"
+  ansible.builtin.pause: { seconds: "{{ drain_wait }}" }
   when: drain_state | default('drain') == 'undrain'

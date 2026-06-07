@@ -1,38 +1,63 @@
 ---
-# Snapshot live VyOS state BEFORE the change — baseline + evidence (eBGP Clos).
+# EVPN-VXLAN fabric PRE-change snapshot + health gate (eBGP Clos).
+# Reads FRR directly via vtysh (full EVPN visibility VyOS op-mode doesn't expose),
+# delegated to localhost using the node's container name (ansible_host).
 - name: Ensure artifacts dir exists
   ansible.builtin.file: { path: "{{ artifacts_dir }}", state: directory }
   delegate_to: localhost
   run_once: true
 
-- name: Gather BGP / EVPN / route state
-  vyos.vyos.vyos_command:
-    commands:
-      - show bgp summary
-      - show bgp l2vpn evpn summary
-      - show ip route summary
-  register: pre
+- name: Gather underlay / overlay / EVPN state
+  ansible.builtin.command: "docker exec {{ ansible_host }} vtysh -c '{{ item }}'"
+  delegate_to: localhost
   changed_when: false
+  loop:
+    - show bgp summary                  # 0: underlay
+    - show bgp l2vpn evpn summary       # 1: overlay
+    - show evpn vni                     # 2: VNIs (leaves)
+    - show evpn es                      # 3: Ethernet Segments
+    - show evpn mac vni 10010           # 4: endpoint MACs (leaves)
+  register: pre
 
-- name: Assert BGP is running (underlay present)
-  ansible.builtin.assert:
-    that: "'Neighbor' in pre.stdout[0] or 'BGP' in pre.stdout[0]"
-    fail_msg: "{{ inventory_hostname }}: no BGP — risky to deploy"
-    success_msg: "{{ inventory_hostname }}: BGP OK pre-deploy"
-
-- name: Record baseline BGP down-peer count (Active/Idle/Connect)
+- name: Record baseline counters
   ansible.builtin.set_fact:
-    pre_bgp_down: "{{ pre.stdout[0] | regex_findall('Active|Idle|Connect') | length }}"
+    pre_underlay_down: "{{ pre.results[0].stdout | regex_findall('Active|Idle|Connect|OpenSent|OpenConfirm') | length }}"
+    pre_evpn_down:     "{{ pre.results[1].stdout | regex_findall('Active|Idle|Connect|OpenSent|OpenConfirm') | length }}"
+    pre_vni_up:        "{{ pre.results[2].stdout | regex_findall('10010') | length }}"
+    pre_mac_count:     "{{ pre.results[4].stdout | regex_search('Number of MACs[^0-9]*([0-9]+)', '\\1') | default('0', true) }}"
+    pre_dup:           "{{ pre.results[4].stdout | regex_findall('[Dd]uplicate') | length }}"
+
+- name: GATE — underlay eBGP fully established (no down peers)
+  ansible.builtin.assert:
+    that: "pre_underlay_down | int == 0"
+    fail_msg: "{{ inventory_hostname }}: underlay BGP has down peers — NOT safe to change"
+    success_msg: "{{ inventory_hostname }}: underlay OK"
+
+- name: GATE — overlay l2vpn-evpn fully established
+  ansible.builtin.assert:
+    that: "pre_evpn_down | int == 0"
+    fail_msg: "{{ inventory_hostname }}: EVPN sessions down — NOT safe to change"
+
+- name: GATE — leaf has a VNI up and no duplicate-MAC
+  ansible.builtin.assert:
+    that:
+      - "pre_vni_up | int >= 1"
+      - "pre_dup | int == 0"
+    fail_msg: "{{ inventory_hostname }}: VNI down or duplicate-MAC detected pre-change"
+    success_msg: "{{ inventory_hostname }}: EVPN healthy ({{ pre_vni_up }} VNI, {{ pre_mac_count }} MACs)"
+  when: "inventory_hostname in groups['leaf']"
 
 - name: Save precheck snapshot
   ansible.builtin.copy:
     dest: "{{ artifacts_dir }}/precheck_{{ inventory_hostname }}.txt"
     content: |
       === PRECHECK {{ inventory_hostname }} ===
-      --- BGP summary (underlay) ---
-      {{ pre.stdout[0] }}
-      --- BGP l2vpn evpn summary ---
-      {{ pre.stdout[1] }}
-      --- route summary ---
-      {{ pre.stdout[2] }}
+      underlay down-peers: {{ pre_underlay_down }} | evpn down-peers: {{ pre_evpn_down }}
+      VNIs up: {{ pre_vni_up }} | MACs: {{ pre_mac_count }} | duplicates: {{ pre_dup }}
+      --- show bgp summary ---
+      {{ pre.results[0].stdout }}
+      --- show bgp l2vpn evpn summary ---
+      {{ pre.results[1].stdout }}
+      --- show evpn es ---
+      {{ pre.results[3].stdout }}
   delegate_to: localhost
