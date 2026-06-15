@@ -112,6 +112,20 @@ docker pull ghcr.io/sysoleg/vyos-container:latest    # core (VyOS)
 docker pull frrouting/frr:latest                     # customers (FRR)
 ```
 
+**Host-kernel prep (once per host — the two settings that bite hardest):**
+```bash
+sudo modprobe bonding                                  # the ESI-LAG servers need the bond module
+sudo sysctl -w net.bridge.bridge-nf-call-iptables=0    # or bridge-netfilter eats the VXLAN overlay
+sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=0   # (br_netfilter defaults these to 1, esp. on WSL2)
+sudo sysctl -w net.bridge.bridge-nf-call-arptables=0
+```
+Persist the sysctls across reboots:
+```bash
+printf 'net.bridge.bridge-nf-call-iptables=0\nnet.bridge.bridge-nf-call-ip6tables=0\nnet.bridge.bridge-nf-call-arptables=0\n' \
+  | sudo tee /etc/sysctl.d/99-clab-bridge.conf && sudo sysctl --system
+```
+Without these the fabric *looks* perfect — every BGP/EVPN session up — but host-to-host stays at 100% loss. See [Start the lab](#2-start-the-lab) for the symptom and the one-line proof.
+
 ---
 
 ## 2. Start the lab
@@ -127,12 +141,14 @@ VyOS takes ~30–60 s to boot. If BGP/EVPN looks stuck right after deploy, reset
 for n in spine1 spine2 leaf1 leaf2 leaf3 leaf4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done
 ```
 
-> **Host ping fails right after deploy but every BGP session is up?** Expected for a few seconds — **EVPN multihoming converges slower than the BGP sessions.** The eBGP underlay and EVPN overlay come up fast; ESI-LAG (Type-1/Type-4 routes, DF election, host-MAC activation) lags. In that window every session is `Established` and both host MACs are advertised, yet `host1 → host2` is 100% loss. The tell — on the host's **own** leaf, its MAC shows `local-inactive (I)` and the ES has no DF yet:
+> **Host ping fails after deploy but every BGP session is up?** It's almost always **bridge-netfilter**, not the fabric. With `br_netfilter` loaded and `net.bridge.bridge-nf-call-iptables=1` (the default — especially on WSL2), the host kernel pushes bridged frames through iptables and Docker's rules drop the decapsulated VXLAN delivery: the control plane converges perfectly while host-to-host stays at 100% loss. Fix it on the host (see [§1 host-kernel prep](#1-install-the-tools-one-time)):
 > ```bash
-> docker exec clab-stage1-leaf3 vtysh -c "show evpn mac vni 10010"   # host2 MAC flagged I = ES not active
-> docker exec clab-stage1-leaf3 vtysh -c "show evpn es"              # ES2: DF not elected yet
+> sudo sysctl -w net.bridge.bridge-nf-call-iptables=0
+> sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=0
+> sudo sysctl -w net.bridge.bridge-nf-call-arptables=0
+> docker exec clab-stage1-host1 ping -c2 10.10.10.22     # 0% loss
 > ```
-> Wait ~30–60 s and it settles on its own (one leaf becomes DF, its peer `N`/non-DF, the MAC goes active), or nudge it: `FIX=1 bash tools/init-evpn.sh`. It is **not** a broken fabric — don't go chasing the underlay or `bridge-nf`.
+> Prove it's causal: flip it back to `1` and the ping dies; `0` and it heals. (Side effect: while the overlay is eaten, multihoming can't settle either — you'll see the host MAC `local-inactive (I)` with no DF in `show evpn es`. It clears once the sysctl is fixed.)
 
 **Check end-to-end:**
 ```bash
