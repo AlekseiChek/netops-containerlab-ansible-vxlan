@@ -127,6 +127,13 @@ VyOS takes ~30–60 s to boot. If BGP/EVPN looks stuck right after deploy, reset
 for n in spine1 spine2 leaf1 leaf2 leaf3 leaf4; do docker exec clab-stage1-$n vtysh -c "clear bgp *"; done
 ```
 
+> **Host ping fails right after deploy but every BGP session is up?** Expected for a few seconds — **EVPN multihoming converges slower than the BGP sessions.** The eBGP underlay and EVPN overlay come up fast; ESI-LAG (Type-1/Type-4 routes, DF election, host-MAC activation) lags. In that window every session is `Established` and both host MACs are advertised, yet `host1 → host2` is 100% loss. The tell — on the host's **own** leaf, its MAC shows `local-inactive (I)` and the ES has no DF yet:
+> ```bash
+> docker exec clab-stage1-leaf3 vtysh -c "show evpn mac vni 10010"   # host2 MAC flagged I = ES not active
+> docker exec clab-stage1-leaf3 vtysh -c "show evpn es"              # ES2: DF not elected yet
+> ```
+> Wait ~30–60 s and it settles on its own (one leaf becomes DF, its peer `N`/non-DF, the MAC goes active), or nudge it: `FIX=1 bash tools/init-evpn.sh`. It is **not** a broken fabric — don't go chasing the underlay or `bridge-nf`.
+
 **Check end-to-end:**
 ```bash
 docker exec clab-stage1-host1 ping -c2 10.10.10.22
